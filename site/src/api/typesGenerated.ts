@@ -1482,6 +1482,7 @@ export interface Workspace {
   readonly health: WorkspaceHealth;
   readonly automatic_updates: AutomaticUpdates;
   readonly allow_renames: boolean;
+  readonly pinned: boolean;
 }
 
 // From codersdk/workspaceagents.go
@@ -2023,6 +2024,7 @@ export const RBACResources: RBACResource[] = [
 export type ResourceType =
   | "api_key"
   | "convert_login"
+  | "favorite_workspace"
   | "git_ssh_key"
   | "group"
   | "health_settings"
@@ -2037,6 +2039,7 @@ export type ResourceType =
 export const ResourceTypes: ResourceType[] = [
   "api_key",
   "convert_login",
+  "favorite_workspace",
   "git_ssh_key",
   "group",
   "health_settings",

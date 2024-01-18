@@ -6999,7 +6999,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/workspaces/{workspace}/pin": {
+        "/workspaces/{workspace}/favorite": {
             "put": {
                 "security": [
                     {
@@ -7012,8 +7012,8 @@ const docTemplate = `{
                 "tags": [
                     "Workspaces"
                 ],
-                "summary": "Pin workspace by ID.",
-                "operationId": "pin-workspace-by-id",
+                "summary": "Favor workspace by ID.",
+                "operationId": "favorite-workspace-by-id",
                 "parameters": [
                     {
                         "type": "string",
@@ -7042,8 +7042,8 @@ const docTemplate = `{
                 "tags": [
                     "Workspaces"
                 ],
-                "summary": "Unpin workspace by ID.",
-                "operationId": "unpin-workspace-by-id",
+                "summary": "Unfavor workspace by ID.",
+                "operationId": "unfavorite-workspace-by-id",
                 "parameters": [
                     {
                         "type": "string",
@@ -10559,6 +10559,7 @@ const docTemplate = `{
                 "user",
                 "workspace",
                 "workspace_build",
+                "favorite_workspace",
                 "git_ssh_key",
                 "api_key",
                 "group",
@@ -10574,6 +10575,7 @@ const docTemplate = `{
                 "ResourceTypeUser",
                 "ResourceTypeWorkspace",
                 "ResourceTypeWorkspaceBuild",
+                "ResourceTypeFavoriteWorkspace",
                 "ResourceTypeGitSSHKey",
                 "ResourceTypeAPIKey",
                 "ResourceTypeGroup",
@@ -12000,6 +12002,9 @@ const docTemplate = `{
                 },
                 "owner_name": {
                     "type": "string"
+                },
+                "pinned": {
+                    "type": "boolean"
                 },
                 "template_active_version_id": {
                     "type": "string",
