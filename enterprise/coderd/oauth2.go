@@ -62,7 +62,7 @@ func (api *API) oAuth2ProviderApps(rw http.ResponseWriter, r *http.Request) {
 			httpapi.InternalServerError(rw, err)
 			return
 		}
-		httpapi.Write(ctx, rw, http.StatusOK, db2sdk.OAuth2ProviderApps(dbApps))
+		httpapi.Write(ctx, rw, http.StatusOK, db2sdk.OAuth2ProviderApps(api.AccessURL, dbApps))
 		return
 	}
 
@@ -90,7 +90,7 @@ func (api *API) oAuth2ProviderApps(rw http.ResponseWriter, r *http.Request) {
 			Icon:        app.OAuth2ProviderApp.Icon,
 		})
 	}
-	httpapi.Write(ctx, rw, http.StatusOK, db2sdk.OAuth2ProviderApps(dbApps))
+	httpapi.Write(ctx, rw, http.StatusOK, db2sdk.OAuth2ProviderApps(api.AccessURL, dbApps))
 }
 
 // @Summary Get OAuth2 application.
@@ -101,10 +101,10 @@ func (api *API) oAuth2ProviderApps(rw http.ResponseWriter, r *http.Request) {
 // @Param app path string true "App ID"
 // @Success 200 {object} codersdk.OAuth2ProviderApp
 // @Router /oauth2-provider/apps/{app} [get]
-func (*API) oAuth2ProviderApp(rw http.ResponseWriter, r *http.Request) {
+func (api *API) oAuth2ProviderApp(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	app := httpmw.OAuth2ProviderApp(r)
-	httpapi.Write(ctx, rw, http.StatusOK, db2sdk.OAuth2ProviderApp(app))
+	httpapi.Write(ctx, rw, http.StatusOK, db2sdk.OAuth2ProviderApp(api.AccessURL, app))
 }
 
 // @Summary Create OAuth2 application.
@@ -137,7 +137,7 @@ func (api *API) postOAuth2ProviderApp(rw http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	httpapi.Write(ctx, rw, http.StatusCreated, db2sdk.OAuth2ProviderApp(app))
+	httpapi.Write(ctx, rw, http.StatusCreated, db2sdk.OAuth2ProviderApp(api.AccessURL, app))
 }
 
 // @Summary Update OAuth2 application.
@@ -171,7 +171,7 @@ func (api *API) putOAuth2ProviderApp(rw http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	httpapi.Write(ctx, rw, http.StatusOK, db2sdk.OAuth2ProviderApp(app))
+	httpapi.Write(ctx, rw, http.StatusOK, db2sdk.OAuth2ProviderApp(api.AccessURL, app))
 }
 
 // @Summary Delete OAuth2 application.
