@@ -1,12 +1,20 @@
 package coderd_test
 
 import (
-	"strconv"
+	"context"
+	"net/http"
+	"net/url"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 
+	"github.com/coder/coder/v2/coderd/coderdtest"
+	"github.com/coder/coder/v2/coderd/coderdtest/oidctest"
+	"github.com/coder/coder/v2/coderd/httpmw"
+	"github.com/coder/coder/v2/coderd/util/ptr"
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/coder/v2/enterprise/coderd/coderdenttest"
 	"github.com/coder/coder/v2/enterprise/coderd/license"
@@ -373,6 +381,419 @@ func TestOAuth2ProviderAppSecrets(t *testing.T) {
 	})
 }
 
+func TestOAuth2ProviderTokenExchange(t *testing.T) {
+	t.Parallel()
+
+	ownerClient, owner := coderdenttest.New(t, &coderdenttest.Options{LicenseOptions: &coderdenttest.LicenseOptions{
+		Features: license.Features{
+			codersdk.FeatureOAuth2Provider: 1,
+		},
+	}})
+	userClient, _ := coderdtest.CreateAnotherUser(t, ownerClient, owner.OrganizationID)
+	ctx := testutil.Context(t, testutil.WaitLong)
+	apps := generateApps(ctx, t, ownerClient)
+
+	//nolint:gocritic // OAauth2 app management requires owner permission.
+	secret, err := ownerClient.PostOAuth2ProviderAppSecret(ctx, apps.Default.ID)
+	require.NoError(t, err)
+
+	// The typical oauth2 flow from this point is:
+	// Create an oauth2.Config using the id, secret, endpoints, and redirect:
+	//	cfg := oauth2.Config{ ... }
+	// Display url for the user to click:
+	//	userClickURL := cfg.AuthCodeURL("random_state")
+	//	userClickURL looks like: https://idp url/authorize?
+	//								client_id=...
+	//								response_type=code
+	//								redirect_uri=.. (back to backstage url) ..
+	//								scope=...
+	//								state=...
+	// *1* User clicks "Allow" on provided page above
+	// The redirect_uri is followed which sends back to backstage with the code and state
+	// Now backstage has the info to do a cfg.Exchange() in the back to get an access token.
+	//
+	// ---NOTE---: If the user has already approved this oauth app, then *1* is optional.
+	//             Coder can just immediately redirect back to backstage without user intervention.
+	tests := []struct {
+		name string
+		app  codersdk.OAuth2ProviderApp
+		// The flow is preAuth(cfg) -> cfg.AuthCodeURL() -> preToken(cfg) -> cfg.Exchange()
+		preAuth    func(valid *oauth2.Config)
+		authError  string
+		preToken   func(valid *oauth2.Config)
+		tokenError string
+
+		// If null, assume the code should be valid.
+		defaultCode *string
+		// custom allows some more advanced manipulation of the oauth2 exchange.
+		exchangeMutate []oauth2.AuthCodeOption
+	}{
+		{
+			name: "AuthInParams",
+			app:  apps.Default,
+			preAuth: func(valid *oauth2.Config) {
+				valid.Endpoint.AuthStyle = oauth2.AuthStyleInParams
+			},
+		},
+		{
+			name: "AuthInvalidAppID",
+			app:  apps.Default,
+			preAuth: func(valid *oauth2.Config) {
+				valid.ClientID = uuid.NewString()
+			},
+			authError: "Resource not found",
+		},
+		{
+			name: "TokenInvalidAppID",
+			app:  apps.Default,
+			preToken: func(valid *oauth2.Config) {
+				valid.ClientID = uuid.NewString()
+			},
+			tokenError: "Resource not found",
+		},
+		{
+			name: "InvalidPort",
+			app:  apps.NoPort,
+			preAuth: func(valid *oauth2.Config) {
+				newURL := must(url.Parse(valid.RedirectURL))
+				newURL.Host = newURL.Hostname() + ":8081"
+				valid.RedirectURL = newURL.String()
+			},
+			authError: "Invalid redirect URL",
+		},
+		{
+			name: "WrongAppHost",
+			app:  apps.Default,
+			preAuth: func(valid *oauth2.Config) {
+				valid.RedirectURL = apps.NoPort.CallbackURL
+			},
+			authError: "Invalid redirect URL",
+		},
+		{
+			name: "InvalidHostPrefix",
+			app:  apps.NoPort,
+			preAuth: func(valid *oauth2.Config) {
+				newURL := must(url.Parse(valid.RedirectURL))
+				newURL.Host = "prefix" + newURL.Hostname()
+				valid.RedirectURL = newURL.String()
+			},
+			authError: "Invalid redirect URL",
+		},
+		{
+			name: "InvalidHost",
+			app:  apps.NoPort,
+			preAuth: func(valid *oauth2.Config) {
+				newURL := must(url.Parse(valid.RedirectURL))
+				newURL.Host = "invalid"
+				valid.RedirectURL = newURL.String()
+			},
+			authError: "Invalid redirect URL",
+		},
+		{
+			name: "InvalidHostAndPort",
+			app:  apps.NoPort,
+			preAuth: func(valid *oauth2.Config) {
+				newURL := must(url.Parse(valid.RedirectURL))
+				newURL.Host = "invalid:8080"
+				valid.RedirectURL = newURL.String()
+			},
+			authError: "Invalid redirect URL",
+		},
+		{
+			name: "InvalidPath",
+			app:  apps.Default,
+			preAuth: func(valid *oauth2.Config) {
+				newURL := must(url.Parse(valid.RedirectURL))
+				newURL.Path = filepath.Join("/prepend", newURL.Path)
+				valid.RedirectURL = newURL.String()
+			},
+			authError: "Invalid redirect URL",
+		},
+		{
+			name: "MissingPath",
+			app:  apps.Default,
+			preAuth: func(valid *oauth2.Config) {
+				newURL := must(url.Parse(valid.RedirectURL))
+				newURL.Path = "/"
+				valid.RedirectURL = newURL.String()
+			},
+			authError: "Invalid redirect URL",
+		},
+		{
+			// Should this work?
+			name: "DifferentProtocol",
+			app:  apps.Default,
+			preAuth: func(valid *oauth2.Config) {
+				newURL := must(url.Parse(valid.RedirectURL))
+				newURL.Scheme = "https"
+				valid.RedirectURL = newURL.String()
+			},
+		},
+		{
+			name: "NestedPath",
+			app:  apps.Default,
+			preAuth: func(valid *oauth2.Config) {
+				newURL := must(url.Parse(valid.RedirectURL))
+				newURL.Path = filepath.Join(newURL.Path, "nested")
+				valid.RedirectURL = newURL.String()
+			},
+		},
+		{
+			// Some oauth implementations allow this, but our users can host
+			// at subdomains. So we should not.
+			name: "Subdomain",
+			app:  apps.Default,
+			preAuth: func(valid *oauth2.Config) {
+				newURL := must(url.Parse(valid.RedirectURL))
+				newURL.Host = "sub." + newURL.Host
+				valid.RedirectURL = newURL.String()
+			},
+			authError: "Invalid redirect URL",
+		},
+		{
+			name: "InvalidSecret",
+			app:  apps.Default,
+			preToken: func(valid *oauth2.Config) {
+				valid.ClientSecret = uuid.NewString()
+			},
+			tokenError: "Invalid client secret or code",
+		},
+		{
+			name: "MissingSecret",
+			app:  apps.Default,
+			preToken: func(valid *oauth2.Config) {
+				valid.ClientSecret = ""
+			},
+			tokenError: "Invalid query params",
+		},
+		{
+			name:        "InvalidCode",
+			app:         apps.Default,
+			defaultCode: ptr.Ref(uuid.NewString()),
+			tokenError:  "Invalid client secret or code",
+		},
+		{
+			name:        "MissingCode",
+			app:         apps.Default,
+			defaultCode: ptr.Ref(""),
+			tokenError:  "Invalid client secret or code",
+		},
+		{
+			name: "OK",
+			app:  apps.Default,
+		},
+		{
+			name:       "InvalidGrantType",
+			app:        apps.Default,
+			tokenError: "Unsupported grant type",
+			exchangeMutate: []oauth2.AuthCodeOption{
+				oauth2.SetAuthURLParam("grant_type", "foobar"),
+			},
+		},
+		{
+			name:       "EmptyGrantType",
+			app:        apps.Default,
+			tokenError: "Unsupported grant type",
+			exchangeMutate: []oauth2.AuthCodeOption{
+				oauth2.SetAuthURLParam("grant_type", ""),
+			},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			// Each test gets its own oauth2.Config so they can run in parallel.
+			// In practice, you would only use 1 as a singleton.
+			valid := &oauth2.Config{
+				ClientID:     test.app.ID.String(),
+				ClientSecret: secret.ClientSecretFull,
+				Endpoint: oauth2.Endpoint{
+					AuthURL:       test.app.Endpoints.Authorization,
+					DeviceAuthURL: test.app.Endpoints.DeviceAuth,
+					TokenURL:      test.app.Endpoints.Token,
+					// TODO: @emyrk we should support both types.
+					AuthStyle: oauth2.AuthStyleInParams,
+				},
+				RedirectURL: test.app.CallbackURL,
+				Scopes:      []string{},
+			}
+
+			ctx := testutil.Context(t, testutil.WaitLong)
+
+			if test.preAuth != nil {
+				test.preAuth(valid)
+			}
+
+			var code string
+			if test.defaultCode != nil {
+				code = *test.defaultCode
+			} else {
+				code, err = authorizationFlow(userClient, valid)
+				if test.authError != "" {
+					require.Error(t, err)
+					require.ErrorContains(t, err, test.authError)
+					// If this errors the token exchange will fail. So end here.
+					return
+				}
+				require.NoError(t, err)
+			}
+
+			// Mutate the valid config for the exchange.
+			if test.preToken != nil {
+				test.preToken(valid)
+			}
+
+			token, err := valid.Exchange(ctx, code, test.exchangeMutate...)
+			if test.tokenError != "" {
+				require.Error(t, err)
+				require.ErrorContains(t, err, test.tokenError)
+			} else {
+				require.NoError(t, err)
+				require.NotEmpty(t, token.AccessToken)
+			}
+		})
+	}
+}
+
+type exchangeSetup struct {
+	cfg    *oauth2.Config
+	app    codersdk.OAuth2ProviderApp
+	secret codersdk.OAuth2ProviderAppSecretFull
+	code   string
+}
+
+func TestOAuth2ProviderRevoke(t *testing.T) {
+	t.Parallel()
+
+	client, owner := coderdenttest.New(t, &coderdenttest.Options{LicenseOptions: &coderdenttest.LicenseOptions{
+		Features: license.Features{
+			codersdk.FeatureOAuth2Provider: 1,
+		},
+	}})
+
+	tests := []struct {
+		name string
+		fn   func(context.Context, *codersdk.Client, exchangeSetup)
+	}{
+		{
+			name: "DeleteApp",
+			fn: func(ctx context.Context, _ *codersdk.Client, s exchangeSetup) {
+				//nolint:gocritic // OAauth2 app management requires owner permission.
+				err := client.DeleteOAuth2ProviderApp(ctx, s.app.ID)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "DeleteSecret",
+			fn: func(ctx context.Context, _ *codersdk.Client, s exchangeSetup) {
+				//nolint:gocritic // OAauth2 app management requires owner permission.
+				err := client.DeleteOAuth2ProviderAppSecret(ctx, s.app.ID, s.secret.ID)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "DeleteToken",
+			fn: func(ctx context.Context, client *codersdk.Client, s exchangeSetup) {
+				err := client.RevokeOAuth2ProviderApp(ctx, s.app.ID)
+				require.NoError(t, err)
+			},
+		},
+	}
+
+	setup := func(ctx context.Context, testClient *codersdk.Client, name string) exchangeSetup {
+		//nolint:gocritic // OAauth2 app management requires owner permission.
+		app, err := client.PostOAuth2ProviderApp(ctx, codersdk.PostOAuth2ProviderAppRequest{
+			Name:        name,
+			CallbackURL: "http://localhost",
+		})
+		require.NoError(t, err)
+
+		//nolint:gocritic // OAauth2 app management requires owner permission.
+		secret, err := client.PostOAuth2ProviderAppSecret(ctx, app.ID)
+		require.NoError(t, err)
+
+		cfg := &oauth2.Config{
+			ClientID:     app.ID.String(),
+			ClientSecret: secret.ClientSecretFull,
+			Endpoint: oauth2.Endpoint{
+				AuthURL:       app.Endpoints.Authorization,
+				DeviceAuthURL: app.Endpoints.DeviceAuth,
+				TokenURL:      app.Endpoints.Token,
+				AuthStyle:     oauth2.AuthStyleInParams,
+			},
+			RedirectURL: app.CallbackURL,
+			Scopes:      []string{},
+		}
+
+		code, err := authorizationFlow(testClient, cfg)
+		require.NoError(t, err)
+
+		return exchangeSetup{
+			cfg:    cfg,
+			app:    app,
+			secret: secret,
+			code:   code,
+		}
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := testutil.Context(t, testutil.WaitLong)
+			testClient, testUser := coderdtest.CreateAnotherUser(t, client, owner.OrganizationID)
+
+			testEntities := setup(ctx, testClient, test.name+"-1")
+
+			// Delete before the exchange completes (code should delete and attempting
+			// to finish the exchange should fail).
+			test.fn(ctx, testClient, testEntities)
+
+			// Exchange should fail because the code should be gone.
+
+			_, err := testEntities.cfg.Exchange(ctx, testEntities.code)
+			require.Error(t, err)
+
+			// Try again, this time letting the exchange complete first.
+			testEntities = setup(ctx, testClient, test.name+"-2")
+			token, err := testEntities.cfg.Exchange(ctx, testEntities.code)
+			require.NoError(t, err)
+
+			// Validate the returned access token and that the app is listed.
+			newClient := codersdk.New(client.URL)
+			newClient.SetSessionToken(token.AccessToken)
+
+			gotUser, err := newClient.User(ctx, codersdk.Me)
+			require.NoError(t, err)
+			require.Equal(t, testUser.ID, gotUser.ID)
+
+			filter := codersdk.OAuth2ProviderAppFilter{UserID: testUser.ID}
+			apps, err := testClient.OAuth2ProviderApps(ctx, filter)
+			require.NoError(t, err)
+			require.Contains(t, apps, testEntities.app)
+
+			// Should not show up for another user.
+			apps, err = client.OAuth2ProviderApps(ctx, codersdk.OAuth2ProviderAppFilter{UserID: owner.UserID})
+			require.NoError(t, err)
+			require.Len(t, apps, 0)
+
+			// Perform the deletion.
+			test.fn(ctx, testClient, testEntities)
+
+			// App should no longer show up for the user and the token should no
+			// longer be valid.
+			apps, err = testClient.OAuth2ProviderApps(ctx, filter)
+			require.NoError(t, err)
+			require.NotContains(t, apps, testEntities.app)
+
+			_, err = newClient.User(ctx, codersdk.Me)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "401")
+		})
+	}
+}
+
 type provisionedApps struct {
 	Default   codersdk.OAuth2ProviderApp
 	NoPort    codersdk.OAuth2ProviderApp
@@ -380,6 +801,7 @@ type provisionedApps struct {
 	// For sorting purposes these are included. You will likely never touch them.
 	Extra []codersdk.OAuth2ProviderApp
 }
+
 func generateApps(ctx context.Context, t *testing.T, client *codersdk.Client) provisionedApps {
 	create := func(name, callback string) codersdk.OAuth2ProviderApp {
 		//nolint:gocritic // OAauth2 app management requires owner permission.
@@ -403,4 +825,24 @@ func generateApps(ctx context.Context, t *testing.T, client *codersdk.Client) pr
 			create("woo-10", "http://10.localhost:3000"),
 		},
 	}
+}
+
+func authorizationFlow(client *codersdk.Client, cfg *oauth2.Config) (string, error) {
+	state := uuid.NewString()
+	return oidctest.OAuth2GetCode(
+		cfg.AuthCodeURL(state),
+		state,
+		func(req *http.Request) (*http.Response, error) {
+			// TODO: Would be better if client had a .Do() method.
+			// TODO: Is this the best way to handle redirects?
+			client.HTTPClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			}
+			return client.Request(context.Background(), req.Method, req.URL.String(), nil, func(req *http.Request) {
+				// Including the path here is ok.
+				req.Header.Set(httpmw.OriginHeader, client.URL.String())
+				req.Header.Set("Referer", client.URL.String())
+			})
+		},
+	)
 }

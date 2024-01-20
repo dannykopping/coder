@@ -164,6 +164,21 @@ func New(ctx context.Context, options *Options) (_ *API, err error) {
 		return nil, xerrors.Errorf("failed to get deployment ID: %w", err)
 	}
 
+	api.AGPL.RootHandler.Group(func(r chi.Router) {
+		r.Use(
+			api.oAuth2ProviderMiddleware,
+			apiKeyMiddlewareOptional,
+			httpmw.AsAuthzSystem(httpmw.ExtractOAuth2ProviderApp(options.Database)),
+		)
+		// Oauth2 linking routes do not make sense under the /api/v2 path.
+		r.Route("/login", func(r chi.Router) {
+			r.Route("/oauth2", func(r chi.Router) {
+				r.Get("/authorize", api.postOAuth2ProviderAppAuthorize())
+				r.Post("/tokens", api.postOAuth2ProviderAppToken())
+			})
+		})
+	})
+
 	api.AGPL.APIHandler.Group(func(r chi.Router) {
 		r.Get("/entitlements", api.serveEntitlements)
 		// /regions overrides the AGPL /regions endpoint
@@ -334,6 +349,7 @@ func New(ctx context.Context, options *Options) (_ *API, err error) {
 					r.Get("/", api.oAuth2ProviderApp)
 					r.Put("/", api.putOAuth2ProviderApp)
 					r.Delete("/", api.deleteOAuth2ProviderApp)
+					r.Delete("/tokens", api.deleteOAuth2ProviderAppTokens)
 
 					r.Route("/secrets", func(r chi.Router) {
 						r.Get("/", api.oAuth2ProviderAppSecrets)

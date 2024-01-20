@@ -2,6 +2,8 @@ package coderd
 
 import (
 	"crypto/sha256"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/coder/coder/v2/coderd/httpmw"
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/coder/v2/cryptorand"
+	"github.com/coder/coder/v2/enterprise/coderd/identityprovider"
 )
 
 func (api *API) oAuth2ProviderMiddleware(next http.Handler) http.Handler {
@@ -282,6 +285,73 @@ func (api *API) deleteOAuth2ProviderAppSecret(rw http.ResponseWriter, r *http.Re
 			Message: "Internal error deleting OAuth2 client secret.",
 			Detail:  err.Error(),
 		})
+		return
+	}
+	httpapi.Write(ctx, rw, http.StatusNoContent, nil)
+}
+
+// @Summary OAuth2 authorization request.
+// @ID oauth2-authorization-request
+// @Security CoderSessionToken
+// @Tags Enterprise
+// @Param client_id query string true "Client ID"
+// @Param state query string true "A random unguessable string"
+// @Param response_type query string true "The only supported value is 'code'"
+// @Param redirect_uri query string false "Redirect here after authorization"
+// @Param scope query string false "Token scopes (currently ignored)"
+// @Success 302
+// @Router /login/oauth2/authorize [post]
+func (api *API) postOAuth2ProviderAppAuthorize() http.HandlerFunc {
+	return identityprovider.Authorize(api.Database, api.AccessURL)
+}
+
+// @Summary OAuth2 token exchange.
+// @ID oauth2-token-exchange
+// @Produce json
+// @Tags Enterprise
+// @Param client_id formData string true "Client ID"
+// @Param clientSecret formData string true "Client secret"
+// @Param code formData string true "Authorization code"
+// @Param grant_type formData string true "Supported values are 'authorization_code' and 'refresh_token'"
+// @Success 200 {object} oauth2.Token
+// @Router /login/oauth2/tokens [post]
+func (api *API) postOAuth2ProviderAppToken() http.HandlerFunc {
+	return identityprovider.Tokens(api.Database, api.DeploymentValues.SessionDuration.Value())
+}
+
+// @Summary Delete OAuth2 application tokens.
+// @ID delete-oauth2-application-tokens
+// @Security CoderSessionToken
+// @Tags Enterprise
+// @Param app path string true "App ID"
+// @Success 204
+// @Router /oauth2-provider/apps/{app}/tokens [delete]
+func (api *API) deleteOAuth2ProviderAppTokens(rw http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	apiKey := httpmw.APIKey(r)
+	app := httpmw.OAuth2ProviderApp(r)
+
+	err := api.Database.InTx(func(tx database.Store) error {
+		err := tx.DeleteOAuth2ProviderAppCodesByAppAndUserID(ctx, database.DeleteOAuth2ProviderAppCodesByAppAndUserIDParams{
+			AppID:  app.ID,
+			UserID: apiKey.UserID,
+		})
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+
+		err = tx.DeleteOAuth2ProviderAppTokensByAppAndUserID(ctx, database.DeleteOAuth2ProviderAppTokensByAppAndUserIDParams{
+			AppID:  app.ID,
+			UserID: apiKey.UserID,
+		})
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+
+		return nil
+	}, nil)
+	if err != nil {
+		httpapi.InternalServerError(rw, err)
 		return
 	}
 	httpapi.Write(ctx, rw, http.StatusNoContent, nil)

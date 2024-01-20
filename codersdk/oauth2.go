@@ -167,3 +167,22 @@ func (c *Client) DeleteOAuth2ProviderAppSecret(ctx context.Context, appID uuid.U
 	}
 	return nil
 }
+
+type OAuth2ProviderGrantType string
+
+const (
+	OAuth2ProviderGrantTypeAuthorizationCode OAuth2ProviderGrantType = "authorization_code"
+)
+
+// RevokeOAuth2ProviderApp completely revokes an app's access for the user.
+func (c *Client) RevokeOAuth2ProviderApp(ctx context.Context, appID uuid.UUID) error {
+	res, err := c.Request(ctx, http.MethodDelete, fmt.Sprintf("/api/v2/oauth2-provider/apps/%s/tokens", appID), nil)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		return ReadBodyAsError(res)
+	}
+	return nil
+}
