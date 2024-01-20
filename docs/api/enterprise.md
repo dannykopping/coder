@@ -433,6 +433,86 @@ curl -X DELETE http://coder-server:8080/api/v2/licenses/{id} \
 
 To perform this operation, you must be authenticated. [Learn more](authentication.md).
 
+## OAuth2 authorization request.
+
+### Code samples
+
+```shell
+# Example request using curl
+curl -X POST http://coder-server:8080/api/v2/login/oauth2/authorize?client_id=string&state=string&response_type=string \
+  -H 'Coder-Session-Token: API_KEY'
+```
+
+`POST /login/oauth2/authorize`
+
+### Parameters
+
+| Name            | In    | Type   | Required | Description                        |
+| --------------- | ----- | ------ | -------- | ---------------------------------- |
+| `client_id`     | query | string | true     | Client ID                          |
+| `state`         | query | string | true     | A random unguessable string        |
+| `response_type` | query | string | true     | The only supported value is 'code' |
+| `redirect_uri`  | query | string | false    | Redirect here after authorization  |
+| `scope`         | query | string | false    | Token scopes (currently ignored)   |
+
+### Responses
+
+| Status | Meaning                                                    | Description | Schema |
+| ------ | ---------------------------------------------------------- | ----------- | ------ |
+| 302    | [Found](https://tools.ietf.org/html/rfc7231#section-6.4.3) | Found       |        |
+
+To perform this operation, you must be authenticated. [Learn more](authentication.md).
+
+## OAuth2 token exchange.
+
+### Code samples
+
+```shell
+# Example request using curl
+curl -X POST http://coder-server:8080/api/v2/login/oauth2/tokens \
+  -H 'Accept: application/json'
+```
+
+`POST /login/oauth2/tokens`
+
+> Body parameter
+
+```yaml
+client_id: string
+clientSecret: string
+code: string
+grant_type: string
+```
+
+### Parameters
+
+| Name             | In   | Type   | Required | Description                                                   |
+| ---------------- | ---- | ------ | -------- | ------------------------------------------------------------- |
+| `body`           | body | object | true     |                                                               |
+| `» client_id`    | body | string | true     | Client ID                                                     |
+| `» clientSecret` | body | string | true     | Client secret                                                 |
+| `» code`         | body | string | true     | Authorization code                                            |
+| `» grant_type`   | body | string | true     | Supported values are 'authorization_code' and 'refresh_token' |
+
+### Example responses
+
+> 200 Response
+
+```json
+{
+  "access_token": "string",
+  "expiry": "string",
+  "refresh_token": "string",
+  "token_type": "string"
+}
+```
+
+### Responses
+
+| Status | Meaning                                                 | Description | Schema                                 |
+| ------ | ------------------------------------------------------- | ----------- | -------------------------------------- |
+| 200    | [OK](https://tools.ietf.org/html/rfc7231#section-6.3.1) | OK          | [oauth2.Token](schemas.md#oauth2token) |
+
 ## Get OAuth2 applications.
 
 ### Code samples
@@ -445,6 +525,12 @@ curl -X GET http://coder-server:8080/api/v2/oauth2-provider/apps \
 ```
 
 `GET /oauth2-provider/apps`
+
+### Parameters
+
+| Name      | In    | Type   | Required | Description                                  |
+| --------- | ----- | ------ | -------- | -------------------------------------------- |
+| `user_id` | query | string | false    | Filter by applications authorized for a user |
 
 ### Example responses
 
@@ -770,6 +856,32 @@ curl -X DELETE http://coder-server:8080/api/v2/oauth2-provider/apps/{app}/secret
 | ---------- | ---- | ------ | -------- | ----------- |
 | `app`      | path | string | true     | App ID      |
 | `secretID` | path | string | true     | Secret ID   |
+
+### Responses
+
+| Status | Meaning                                                         | Description | Schema |
+| ------ | --------------------------------------------------------------- | ----------- | ------ |
+| 204    | [No Content](https://tools.ietf.org/html/rfc7231#section-6.3.5) | No Content  |        |
+
+To perform this operation, you must be authenticated. [Learn more](authentication.md).
+
+## Delete OAuth2 application tokens.
+
+### Code samples
+
+```shell
+# Example request using curl
+curl -X DELETE http://coder-server:8080/api/v2/oauth2-provider/apps/{app}/tokens \
+  -H 'Coder-Session-Token: API_KEY'
+```
+
+`DELETE /oauth2-provider/apps/{app}/tokens`
+
+### Parameters
+
+| Name  | In   | Type   | Required | Description |
+| ----- | ---- | ------ | -------- | ----------- |
+| `app` | path | string | true     | App ID      |
 
 ### Responses
 
