@@ -2269,9 +2269,10 @@ export const WorkspaceStatuses: WorkspaceStatus[] = [
 ];
 
 // From codersdk/workspacebuilds.go
-export type WorkspaceTransition = "delete" | "start" | "stop";
+export type WorkspaceTransition = "delete" | "snapshot" | "start" | "stop";
 export const WorkspaceTransitions: WorkspaceTransition[] = [
   "delete",
+  "snapshot",
   "start",
   "stop",
 ];

@@ -20,6 +20,7 @@ const transitionMessages = {
   start: "started",
   stop: "stopped",
   delete: "deleted",
+  snapshot: "snapshot",
 };
 
 export const BuildRow: FC<BuildRowProps> = ({ build }) => {

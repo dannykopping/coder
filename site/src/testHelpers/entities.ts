@@ -471,6 +471,10 @@ export const MockTemplate: TypesGen.Template = {
       P50: 1000,
       P95: 1500,
     },
+    snapshot: {
+      P50: 1000,
+      P95: 1500,
+    },
   },
   description: "This is a test description.",
   default_ttl_ms: 24 * 60 * 60 * 1000,
@@ -1005,12 +1009,19 @@ export const MockWorkspaceBuildDelete: TypesGen.WorkspaceBuild = {
   transition: "delete",
 };
 
+export const MockWorkspaceBuildSnapshot: TypesGen.WorkspaceBuild = {
+  ...MockWorkspaceBuild,
+  id: "4",
+  transition: "snapshot",
+};
+
 export const MockBuilds = [
   { ...MockWorkspaceBuild, id: "1" },
   { ...MockWorkspaceBuildAutostart, id: "2" },
   { ...MockWorkspaceBuildAutostop, id: "3" },
   { ...MockWorkspaceBuildStop, id: "4" },
   { ...MockWorkspaceBuildDelete, id: "5" },
+  { ...MockWorkspaceBuildSnapshot, id: "6" },
 ];
 
 export const MockWorkspace: TypesGen.Workspace = {

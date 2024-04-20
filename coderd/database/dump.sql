@@ -192,7 +192,8 @@ CREATE TYPE workspace_app_health AS ENUM (
 CREATE TYPE workspace_transition AS ENUM (
     'start',
     'stop',
-    'delete'
+    'delete',
+    'snapshot'
 );
 
 CREATE FUNCTION delete_deleted_oauth2_provider_app_token_api_key() RETURNS trigger

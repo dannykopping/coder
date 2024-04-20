@@ -9019,7 +9019,8 @@ const docTemplate = `{
                         "create",
                         "start",
                         "stop",
-                        "delete"
+                        "delete",
+                        "snapshot"
                     ],
                     "allOf": [
                         {
@@ -13362,12 +13363,14 @@ const docTemplate = `{
             "enum": [
                 "start",
                 "stop",
-                "delete"
+                "delete",
+                "snapshot"
             ],
             "x-enum-varnames": [
                 "WorkspaceTransitionStart",
                 "WorkspaceTransitionStop",
-                "WorkspaceTransitionDelete"
+                "WorkspaceTransitionDelete",
+                "WorkspaceTransitionSnapshot"
             ]
         },
         "codersdk.WorkspacesResponse": {

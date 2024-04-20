@@ -208,6 +208,7 @@ enum WorkspaceTransition {
     START = 0;
     STOP = 1;
     DESTROY = 2;
+    SNAPSHOT = 3;
 }
 
 // Metadata is information about a workspace used in the execution of a build

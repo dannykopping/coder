@@ -1601,13 +1601,14 @@ AuthorizationObject can represent a "set" of objects, such as: all workspaces in
 
 #### Enumerated Values
 
-| Property     | Value    |
-| ------------ | -------- |
-| `log_level`  | `debug`  |
-| `transition` | `create` |
-| `transition` | `start`  |
-| `transition` | `stop`   |
-| `transition` | `delete` |
+| Property     | Value      |
+| ------------ | ---------- |
+| `log_level`  | `debug`    |
+| `transition` | `create`   |
+| `transition` | `start`    |
+| `transition` | `stop`     |
+| `transition` | `delete`   |
+| `transition` | `snapshot` |
 
 ## codersdk.CreateWorkspaceProxyRequest
 
@@ -7031,11 +7032,12 @@ If the schedule is empty, the user will be updated to use the default schedule.|
 
 #### Enumerated Values
 
-| Value    |
-| -------- |
-| `start`  |
-| `stop`   |
-| `delete` |
+| Value      |
+| ---------- |
+| `start`    |
+| `stop`     |
+| `delete`   |
+| `snapshot` |
 
 ## codersdk.WorkspacesResponse
 

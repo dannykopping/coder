@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coder/coder/v2/codersdk"
 	"github.com/spf13/afero"
 	"golang.org/x/xerrors"
 
@@ -196,6 +197,7 @@ func provisionEnv(
 	env = append(env,
 		"CODER_AGENT_URL="+metadata.GetCoderUrl(),
 		"CODER_WORKSPACE_TRANSITION="+strings.ToLower(metadata.GetWorkspaceTransition().String()),
+		"CODER_WORKSPACE_SNAPSHOT="+fmt.Sprintf("%v", metadata.GetWorkspaceTransition().String() == string(codersdk.WorkspaceTransitionSnapshot)),
 		"CODER_WORKSPACE_NAME="+metadata.GetWorkspaceName(),
 		"CODER_WORKSPACE_OWNER="+metadata.GetWorkspaceOwner(),
 		"CODER_WORKSPACE_OWNER_EMAIL="+metadata.GetWorkspaceOwnerEmail(),

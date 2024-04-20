@@ -50,6 +50,7 @@ Coder — A tool for provisioning self-hosted development environments with Terr
 | [<code>restart</code>](./cli/restart.md)               | Restart a workspace                                                                                   |
 | [<code>schedule</code>](./cli/schedule.md)             | Schedule automated start and stop times for workspaces                                                |
 | [<code>show</code>](./cli/show.md)                     | Display details of a workspace's resources and agents                                                 |
+| [<code>snapshot</code>](./cli/snapshot.md)             | Capture a point-in-time snapshot of a workspace                                                       |
 | [<code>speedtest</code>](./cli/speedtest.md)           | Run upload and download tests from your machine to a workspace                                        |
 | [<code>ssh</code>](./cli/ssh.md)                       | Start a shell into a workspace                                                                        |
 | [<code>start</code>](./cli/start.md)                   | Start a workspace                                                                                     |

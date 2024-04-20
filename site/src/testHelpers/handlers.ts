@@ -206,6 +206,7 @@ export const handlers = [
       start: M.MockWorkspaceBuild,
       stop: M.MockWorkspaceBuildStop,
       delete: M.MockWorkspaceBuildDelete,
+      snapshot: M.MockWorkspaceBuildSnapshot,
     };
     const result = transitionToBuild[transition];
     return HttpResponse.json(result);

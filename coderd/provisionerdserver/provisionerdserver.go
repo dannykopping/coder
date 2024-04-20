@@ -1894,6 +1894,8 @@ func convertWorkspaceTransition(transition database.WorkspaceTransition) (sdkpro
 		return sdkproto.WorkspaceTransition_STOP, nil
 	case database.WorkspaceTransitionDelete:
 		return sdkproto.WorkspaceTransition_DESTROY, nil
+	case database.WorkspaceTransitionSnapshot:
+		return sdkproto.WorkspaceTransition_SNAPSHOT, nil
 	default:
 		return 0, xerrors.Errorf("unrecognized transition: %q", transition)
 	}

@@ -26,6 +26,7 @@ export enum WorkspaceTransition {
   START = 0,
   STOP = 1,
   DESTROY = 2,
+  SNAPSHOT = 3,
   UNRECOGNIZED = -1,
 }
 

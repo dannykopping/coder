@@ -20,6 +20,7 @@ const (
 	WorkspaceStart
 	WorkspaceUpdate
 	WorkspaceRestart
+	WorkspaceSnapshot
 )
 
 type ParameterResolver struct {

@@ -8029,7 +8029,7 @@
           "format": "uuid"
         },
         "transition": {
-          "enum": ["create", "start", "stop", "delete"],
+          "enum": ["create", "start", "stop", "delete", "snapshot"],
           "allOf": [
             {
               "$ref": "#/definitions/codersdk.WorkspaceTransition"
@@ -12135,11 +12135,12 @@
     },
     "codersdk.WorkspaceTransition": {
       "type": "string",
-      "enum": ["start", "stop", "delete"],
+      "enum": ["start", "stop", "delete", "snapshot"],
       "x-enum-varnames": [
         "WorkspaceTransitionStart",
         "WorkspaceTransitionStop",
-        "WorkspaceTransitionDelete"
+        "WorkspaceTransitionDelete",
+        "WorkspaceTransitionSnapshot"
       ]
     },
     "codersdk.WorkspacesResponse": {

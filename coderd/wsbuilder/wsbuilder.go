@@ -642,6 +642,8 @@ func (b *Builder) authorize(authFunc func(action rbac.Action, object rbac.Object
 		action = rbac.ActionDelete
 	case database.WorkspaceTransitionStart, database.WorkspaceTransitionStop:
 		action = rbac.ActionUpdate
+	case database.WorkspaceTransitionSnapshot:
+		action = rbac.ActionUpdate // TODO: ?
 	default:
 		msg := fmt.Sprintf("Transition %q not supported.", b.trans)
 		return BuildError{http.StatusBadRequest, msg, xerrors.New(msg)}

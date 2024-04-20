@@ -851,6 +851,11 @@
           "path": "cli/show.md"
         },
         {
+          "title": "snapshot",
+          "description": "Capture a point-in-time snapshot of a workspace",
+          "path": "cli/snapshot.md"
+        },
+        {
           "title": "speedtest",
           "description": "Run upload and download tests from your machine to a workspace",
           "path": "cli/speedtest.md"
