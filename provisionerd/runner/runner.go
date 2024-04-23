@@ -918,6 +918,8 @@ func (r *Runner) runWorkspaceBuild(ctx context.Context) (*proto.CompletedJob, *p
 		commitQuota = true
 	case sdkproto.WorkspaceTransition_DESTROY:
 		applyStage = "Destroying workspace"
+	case sdkproto.WorkspaceTransition_SNAPSHOT:
+		applyStage = "Snapshotting workspace"
 	}
 
 	failedJob := r.configure(&sdkproto.Config{

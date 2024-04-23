@@ -23,16 +23,17 @@ const (
 type WorkspaceStatus string
 
 const (
-	WorkspaceStatusPending   WorkspaceStatus = "pending"
-	WorkspaceStatusStarting  WorkspaceStatus = "starting"
-	WorkspaceStatusRunning   WorkspaceStatus = "running"
-	WorkspaceStatusStopping  WorkspaceStatus = "stopping"
-	WorkspaceStatusStopped   WorkspaceStatus = "stopped"
-	WorkspaceStatusFailed    WorkspaceStatus = "failed"
-	WorkspaceStatusCanceling WorkspaceStatus = "canceling"
-	WorkspaceStatusCanceled  WorkspaceStatus = "canceled"
-	WorkspaceStatusDeleting  WorkspaceStatus = "deleting"
-	WorkspaceStatusDeleted   WorkspaceStatus = "deleted"
+	WorkspaceStatusPending      WorkspaceStatus = "pending"
+	WorkspaceStatusStarting     WorkspaceStatus = "starting"
+	WorkspaceStatusRunning      WorkspaceStatus = "running"
+	WorkspaceStatusStopping     WorkspaceStatus = "stopping"
+	WorkspaceStatusStopped      WorkspaceStatus = "stopped"
+	WorkspaceStatusFailed       WorkspaceStatus = "failed"
+	WorkspaceStatusCanceling    WorkspaceStatus = "canceling"
+	WorkspaceStatusCanceled     WorkspaceStatus = "canceled"
+	WorkspaceStatusDeleting     WorkspaceStatus = "deleting"
+	WorkspaceStatusDeleted      WorkspaceStatus = "deleted"
+	WorkspaceStatusSnapshotting WorkspaceStatus = "snapshotting"
 )
 
 type BuildReason string

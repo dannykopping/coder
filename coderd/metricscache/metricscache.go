@@ -202,9 +202,10 @@ func (c *Cache) Close() error {
 
 func (c *Cache) TemplateBuildTimeStats(id uuid.UUID) codersdk.TemplateBuildTimeStats {
 	unknown := codersdk.TemplateBuildTimeStats{
-		codersdk.WorkspaceTransitionStart:  {},
-		codersdk.WorkspaceTransitionStop:   {},
-		codersdk.WorkspaceTransitionDelete: {},
+		codersdk.WorkspaceTransitionStart:    {},
+		codersdk.WorkspaceTransitionStop:     {},
+		codersdk.WorkspaceTransitionDelete:   {},
+		codersdk.WorkspaceTransitionSnapshot: {},
 	}
 
 	m := c.templateAverageBuildTime.Load()
@@ -237,6 +238,10 @@ func (c *Cache) TemplateBuildTimeStats(id uuid.UUID) codersdk.TemplateBuildTimeS
 			P95: convertMillis(resp.Stop95),
 		},
 		codersdk.WorkspaceTransitionDelete: {
+			P50: convertMillis(resp.Delete50),
+			P95: convertMillis(resp.Delete95),
+		},
+		codersdk.WorkspaceTransitionSnapshot: {
 			P50: convertMillis(resp.Delete50),
 			P95: convertMillis(resp.Delete95),
 		},

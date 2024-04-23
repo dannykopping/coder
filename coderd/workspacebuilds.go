@@ -988,6 +988,8 @@ func convertWorkspaceStatus(jobStatus codersdk.ProvisionerJobStatus, transition 
 			return codersdk.WorkspaceStatusStopping
 		case codersdk.WorkspaceTransitionDelete:
 			return codersdk.WorkspaceStatusDeleting
+		case codersdk.WorkspaceTransitionSnapshot:
+			return codersdk.WorkspaceStatusSnapshotting
 		}
 	case codersdk.ProvisionerJobSucceeded:
 		switch transition {
@@ -997,6 +999,9 @@ func convertWorkspaceStatus(jobStatus codersdk.ProvisionerJobStatus, transition 
 			return codersdk.WorkspaceStatusStopped
 		case codersdk.WorkspaceTransitionDelete:
 			return codersdk.WorkspaceStatusDeleted
+		case codersdk.WorkspaceTransitionSnapshot:
+			// TODO: handle when snapshot should destroy workspace
+			return codersdk.WorkspaceStatusRunning
 		}
 	case codersdk.ProvisionerJobCanceling:
 		return codersdk.WorkspaceStatusCanceling
