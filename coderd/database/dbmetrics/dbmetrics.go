@@ -81,11 +81,25 @@ func (m metricsStore) InTx(f func(database.Store) error, options *sql.TxOptions)
 	return err
 }
 
+func (m metricsStore) InsertNotificationMessage(ctx context.Context, arg database.InsertNotificationMessageParams) (database.NotificationMessage, error) {
+	start := time.Now()
+	r0, r1 := m.s.InsertNotificationMessage(ctx, arg)
+	m.queryLatencies.WithLabelValues("InsertNotificationMessage").Observe(time.Since(start).Seconds())
+	return r0, r1
+}
+
 func (m metricsStore) AcquireLock(ctx context.Context, pgAdvisoryXactLock int64) error {
 	start := time.Now()
 	err := m.s.AcquireLock(ctx, pgAdvisoryXactLock)
 	m.queryLatencies.WithLabelValues("AcquireLock").Observe(time.Since(start).Seconds())
 	return err
+}
+
+func (m metricsStore) AcquireNotificationMessages(ctx context.Context, arg database.AcquireNotificationMessagesParams) ([]database.NotificationMessage, error) {
+	start := time.Now()
+	r0, r1 := m.s.AcquireNotificationMessages(ctx, arg)
+	m.queryLatencies.WithLabelValues("AcquireNotificationMessages").Observe(time.Since(start).Seconds())
+	return r0, r1
 }
 
 func (m metricsStore) AcquireProvisionerJob(ctx context.Context, arg database.AcquireProvisionerJobParams) (database.ProvisionerJob, error) {
@@ -263,6 +277,13 @@ func (m metricsStore) DeleteOAuth2ProviderAppTokensByAppAndUserID(ctx context.Co
 	return r0
 }
 
+func (m metricsStore) DeleteOldNotificationMessages(ctx context.Context) error {
+	start := time.Now()
+	r0 := m.s.DeleteOldNotificationMessages(ctx)
+	m.queryLatencies.WithLabelValues("DeleteOldNotificationMessages").Observe(time.Since(start).Seconds())
+	return r0
+}
+
 func (m metricsStore) DeleteOldProvisionerDaemons(ctx context.Context) error {
 	start := time.Now()
 	r0 := m.s.DeleteOldProvisionerDaemons(ctx)
@@ -345,6 +366,13 @@ func (m metricsStore) DeleteWorkspaceAgentPortSharesByTemplate(ctx context.Conte
 	r0 := m.s.DeleteWorkspaceAgentPortSharesByTemplate(ctx, templateID)
 	m.queryLatencies.WithLabelValues("DeleteWorkspaceAgentPortSharesByTemplate").Observe(time.Since(start).Seconds())
 	return r0
+}
+
+func (m metricsStore) EnqueueNotificationMessage(ctx context.Context, arg database.EnqueueNotificationMessageParams) (database.NotificationMessage, error) {
+	start := time.Now()
+	r0, r1 := m.s.EnqueueNotificationMessage(ctx, arg)
+	m.queryLatencies.WithLabelValues("EnqueueNotificationMessage").Observe(time.Since(start).Seconds())
+	return r0, r1
 }
 
 func (m metricsStore) FavoriteWorkspace(ctx context.Context, arg uuid.UUID) error {
@@ -1523,6 +1551,13 @@ func (m metricsStore) InsertMissingGroups(ctx context.Context, arg database.Inse
 	return r0, r1
 }
 
+func (m metricsStore) InsertNotificationTemplate(ctx context.Context, arg database.InsertNotificationTemplateParams) (database.NotificationTemplate, error) {
+	start := time.Now()
+	r0, r1 := m.s.InsertNotificationTemplate(ctx, arg)
+	m.queryLatencies.WithLabelValues("InsertNotificationTemplate").Observe(time.Since(start).Seconds())
+	return r0, r1
+}
+
 func (m metricsStore) InsertOAuth2ProviderApp(ctx context.Context, arg database.InsertOAuth2ProviderAppParams) (database.OAuth2ProviderApp, error) {
 	start := time.Now()
 	r0, r1 := m.s.InsertOAuth2ProviderApp(ctx, arg)
@@ -1744,6 +1779,27 @@ func (m metricsStore) ListWorkspaceAgentPortShares(ctx context.Context, workspac
 	start := time.Now()
 	r0, r1 := m.s.ListWorkspaceAgentPortShares(ctx, workspaceID)
 	m.queryLatencies.WithLabelValues("ListWorkspaceAgentPortShares").Observe(time.Since(start).Seconds())
+	return r0, r1
+}
+
+func (m metricsStore) MarkNotificationMessageFailed(ctx context.Context, arg database.MarkNotificationMessageFailedParams) (database.NotificationMessage, error) {
+	start := time.Now()
+	r0, r1 := m.s.MarkNotificationMessageFailed(ctx, arg)
+	m.queryLatencies.WithLabelValues("MarkNotificationMessageFailed").Observe(time.Since(start).Seconds())
+	return r0, r1
+}
+
+func (m metricsStore) MarkNotificationMessageSent(ctx context.Context, arg database.MarkNotificationMessageSentParams) (database.NotificationMessage, error) {
+	start := time.Now()
+	r0, r1 := m.s.MarkNotificationMessageSent(ctx, arg)
+	m.queryLatencies.WithLabelValues("MarkNotificationMessageSent").Observe(time.Since(start).Seconds())
+	return r0, r1
+}
+
+func (m metricsStore) MarkNotificationMessagesInhibited(ctx context.Context, arg database.MarkNotificationMessagesInhibitedParams) (database.NotificationMessage, error) {
+	start := time.Now()
+	r0, r1 := m.s.MarkNotificationMessagesInhibited(ctx, arg)
+	m.queryLatencies.WithLabelValues("MarkNotificationMessagesInhibited").Observe(time.Since(start).Seconds())
 	return r0, r1
 }
 

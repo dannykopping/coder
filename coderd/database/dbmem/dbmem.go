@@ -904,6 +904,15 @@ func (*FakeQuerier) AcquireLock(_ context.Context, _ int64) error {
 	return xerrors.New("AcquireLock must only be called within a transaction")
 }
 
+func (q *FakeQuerier) AcquireNotificationMessages(ctx context.Context, arg database.AcquireNotificationMessagesParams) ([]database.NotificationMessage, error) {
+	err := validateDatabaseType(arg)
+	if err != nil {
+		return nil, err
+	}
+
+	panic("not implemented")
+}
+
 func (q *FakeQuerier) AcquireProvisionerJob(_ context.Context, arg database.AcquireProvisionerJobParams) (database.ProvisionerJob, error) {
 	if err := validateDatabaseType(arg); err != nil {
 		return database.ProvisionerJob{}, err
@@ -1496,6 +1505,10 @@ func (q *FakeQuerier) DeleteOAuth2ProviderAppTokensByAppAndUserID(_ context.Cont
 	return nil
 }
 
+func (q *FakeQuerier) DeleteOldNotificationMessages(ctx context.Context) error {
+	panic("not implemented")
+}
+
 func (q *FakeQuerier) DeleteOldProvisionerDaemons(_ context.Context) error {
 	q.mutex.Lock()
 	defer q.mutex.Unlock()
@@ -1709,6 +1722,15 @@ func (q *FakeQuerier) DeleteWorkspaceAgentPortSharesByTemplate(_ context.Context
 	}
 
 	return nil
+}
+
+func (q *FakeQuerier) EnqueueNotificationMessage(ctx context.Context, arg database.EnqueueNotificationMessageParams) (database.NotificationMessage, error) {
+	err := validateDatabaseType(arg)
+	if err != nil {
+		return database.NotificationMessage{}, err
+	}
+
+	panic("not implemented")
 }
 
 func (q *FakeQuerier) FavoriteWorkspace(_ context.Context, arg uuid.UUID) error {
@@ -6055,6 +6077,15 @@ func (q *FakeQuerier) InsertMissingGroups(_ context.Context, arg database.Insert
 	return newGroups, nil
 }
 
+func (q *FakeQuerier) InsertNotificationTemplate(ctx context.Context, arg database.InsertNotificationTemplateParams) (database.NotificationTemplate, error) {
+	err := validateDatabaseType(arg)
+	if err != nil {
+		return database.NotificationTemplate{}, err
+	}
+
+	panic("not implemented")
+}
+
 func (q *FakeQuerier) InsertOAuth2ProviderApp(_ context.Context, arg database.InsertOAuth2ProviderAppParams) (database.OAuth2ProviderApp, error) {
 	err := validateDatabaseType(arg)
 	if err != nil {
@@ -6951,6 +6982,33 @@ func (q *FakeQuerier) ListWorkspaceAgentPortShares(_ context.Context, workspaceI
 	}
 
 	return shares, nil
+}
+
+func (q *FakeQuerier) MarkNotificationMessageFailed(ctx context.Context, arg database.MarkNotificationMessageFailedParams) (database.NotificationMessage, error) {
+	err := validateDatabaseType(arg)
+	if err != nil {
+		return database.NotificationMessage{}, err
+	}
+
+	panic("not implemented")
+}
+
+func (q *FakeQuerier) MarkNotificationMessageSent(ctx context.Context, arg database.MarkNotificationMessageSentParams) (database.NotificationMessage, error) {
+	err := validateDatabaseType(arg)
+	if err != nil {
+		return database.NotificationMessage{}, err
+	}
+
+	panic("not implemented")
+}
+
+func (q *FakeQuerier) MarkNotificationMessagesInhibited(ctx context.Context, arg database.MarkNotificationMessagesInhibitedParams) (database.NotificationMessage, error) {
+	err := validateDatabaseType(arg)
+	if err != nil {
+		return database.NotificationMessage{}, err
+	}
+
+	panic("not implemented")
 }
 
 func (q *FakeQuerier) ReduceWorkspaceAgentShareLevelToAuthenticatedByTemplate(_ context.Context, templateID uuid.UUID) error {
