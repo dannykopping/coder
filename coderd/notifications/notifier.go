@@ -3,133 +3,107 @@ package notifications
 import (
 	"context"
 	"fmt"
-	"math/rand/v2"
-	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/coder/coder/v2/coderd/database"
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/xerrors"
+
+	"github.com/coder/coder/v2/coderd/database"
+	"github.com/coder/coder/v2/coderd/notifications/dispatcher"
 )
 
-const NotifierQueueSize = 10
-const NotifierLeaseLength = time.Minute * 10
+const (
+	NotifierQueueSize   = 10
+	NotifierLeaseLength = time.Minute * 10
+)
 
 type notifier struct {
-	id   uuid.UUID
-	q    []database.NotificationMessage
-	tick *time.Ticker
+	id            uuid.UUID
+	q             []database.NotificationMessage
+	store         Store
+	ctx           context.Context
+	dispatchCount atomic.Int32
 
-	close chan struct{}
-
-	db Store
+	tick    *time.Ticker
+	stopped atomic.Bool
+	quit    chan any
+	smtp    dispatcher.SMTPDispatcher
 }
 
-func newNotifier(db Store) *notifier {
+func newNotifier(ctx context.Context, db Store) *notifier {
 	return &notifier{
-		id:   uuid.New(),
-		q:    make([]database.NotificationMessage, NotifierQueueSize),
-		tick: time.NewTicker(time.Second * 5),
-
-		close: make(chan struct{}, 1),
-
-		db: db,
+		id:    uuid.New(),
+		ctx:   ctx,
+		q:     make([]database.NotificationMessage, NotifierQueueSize),
+		quit:  make(chan any),
+		tick:  time.NewTicker(time.Second * 15),
+		store: db,
+		smtp:  dispatcher.SMTPDispatcher{},
 	}
 }
 
-func (n *notifier) run() error {
-	for ; true; <-n.tick.C {
-		fmt.Printf("[%s] TICK!\n", n.id)
+func (n *notifier) run(ctx context.Context, success chan<- dispatchResult, failure chan<- dispatchResult) error {
+	defer n.tick.Stop()
+
+	for {
+		err := n.process(ctx, success, failure)
+		if err != nil {
+			return err
+		}
 
 		select {
-		case <-n.close:
-			n.tick.Stop()
-			return xerrors.Errorf("%s closed", n.id)
-		default:
+		case <-ctx.Done():
+			return xerrors.Errorf("[%s] %w", n.id, ctx.Err())
+		case <-n.quit:
+			return xerrors.Errorf("[%s] stopped!", n.id)
+		case <-n.tick.C:
+			// sleep until next invocation
 		}
+	}
+}
 
-		msgs, err := n.fetch(context.Background())
-		if err != nil {
-			return xerrors.Errorf("fetch messages: %w", err)
-		}
+func (n *notifier) process(ctx context.Context, success chan<- dispatchResult, failure chan<- dispatchResult) error {
+	fmt.Printf("[%s] TICK!\n", n.id)
 
-		type dispatchResult struct {
-			id  uuid.UUID
-			err error
-		}
-
-		var closed atomic.Bool
-
-		gather := make(chan dispatchResult, NotifierQueueSize)
-		for _, msg := range msgs {
-			go func() {
-				msg := msg
-				dErr := n.dispatch(msg)
-
-				if closed.Load() {
-					return
-				}
-
-				gather <- dispatchResult{id: msg.ID, err: dErr}
-				//fmt.Printf("[%s] >>>%s gathered: (%d of %d)\n", n.id, msg.ID, len(gather), cap(gather))
-			}()
-		}
-
-		closeMe := make(chan bool, 1)
-		time.AfterFunc(time.Second*2, func() {
-			closeMe <- true
-		})
-
-		var wg sync.WaitGroup
-		wg.Add(1)
-
-		ticker := time.NewTicker(time.Millisecond * 100)
-		defer ticker.Stop()
-
-		go func() {
-			defer wg.Done()
-
-			for {
-				select {
-				case <-closeMe:
-					closed.Store(true)
-					close(gather)
-
-					fmt.Printf("[%s] timeout!! release the lease\n", n.id)
-
-					fmt.Printf("collected these %v messages though:\n", len(gather))
-
-					for x := range gather {
-						fmt.Printf("[%s]\t>>>%s: %v\n", n.id, x.id, x.err)
-					}
-
-					// update the messages that did return
-					return
-				case <-ticker.C:
-					fmt.Printf("[%s] %d of %d collected\n", n.id, len(gather), cap(gather))
-					if len(gather) == cap(gather) {
-						fmt.Printf("all messages gathered!\n")
-						close(gather)
-
-						for x := range gather {
-							fmt.Printf("[%s]\t>>>%s: %v\n", n.id, x.id, x.err)
-						}
-
-						return
-					} else {
-						//fmt.Printf("[%s] >>>%d of %d\n", n.id, len(gather), cap(gather))
-						//time.Sleep(time.Millisecond * 10)
-					}
-				default:
-				}
-			}
-		}()
-
-		wg.Wait()
-		fmt.Printf("[%s] END\n", n.id)
+	msgs, err := n.fetch(ctx)
+	if err != nil {
+		return xerrors.Errorf("fetch messages: %w", err)
 	}
 
+	eg, egCtx := errgroup.WithContext(ctx)
+	egCtx, cancel := context.WithCancel(egCtx)
+	for _, msg := range msgs {
+		eg.Go(func() error {
+			x := n.dispatch(ctx, msg, success, failure)
+			fmt.Printf("[%s] [%s] %v\n", n.id, msg.ID, x)
+			return x
+		})
+	}
+
+	select {
+	// Bail out if context canceled or notifier is stopped.
+	case <-ctx.Done():
+		fmt.Printf("canceled! %s\n", ctx.Err())
+		cancel()
+		return ctx.Err()
+	case <-n.quit:
+		fmt.Printf("stopped!\n")
+		cancel()
+		return xerrors.New("stopped")
+
+	// Wait for all dispatches to complete or for a timeout, whichever comes first.
+	case <-egCtx.Done():
+		fmt.Printf("dispatch ended: %s\n", egCtx.Err())
+		cancel()
+	// TODO: chaos monkey, remove
+	case <-time.After(time.Millisecond * 450):
+		fmt.Printf("timeout!\n")
+		cancel()
+	}
+
+	fmt.Printf("[%s]>>>>GOT TO END\n", n.id)
 	return nil
 }
 
@@ -138,14 +112,13 @@ func (n *notifier) fetch(ctx context.Context) ([]database.NotificationMessage, e
 	deadline, _ := ctx.Deadline()
 	defer cancel()
 
-	msgs, err := n.db.AcquireNotificationMessages(ctx, database.AcquireNotificationMessagesParams{
+	msgs, err := n.store.AcquireNotificationMessages(ctx, database.AcquireNotificationMessagesParams{
 		Count:       NotifierQueueSize,
 		NotifierID:  n.id,
 		LeasedUntil: deadline,
 		UserID:      uuid.New(), // TODO: use real user ID
 		OrgID:       uuid.New(), // TODO: use real org ID
 	})
-
 	if err != nil {
 		return nil, xerrors.Errorf("acquire messages: %w", err)
 	}
@@ -153,17 +126,43 @@ func (n *notifier) fetch(ctx context.Context) ([]database.NotificationMessage, e
 	return msgs, nil
 }
 
-func (n *notifier) dispatch(msg database.NotificationMessage) error {
-	t := time.Duration(rand.IntN(500)) * time.Millisecond
-
-	if rand.IntN(10) > 8 {
-		t = t + time.Second*2
+func (n *notifier) dispatch(ctx context.Context, msg database.NotificationMessage, success, failure chan<- dispatchResult) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
-	time.Sleep(t)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*10) // TODO: configurable
+	defer cancel()
 
-	if rand.IntN(10) < 5 {
-		return xerrors.New(fmt.Sprintf("%s: oops", msg.ID))
+	err := n.smtp.Send(ctx, msg, "my title", "my body")
+
+	// Don't try to accumulate message responses if the context has been canceled.
+	// This message's lease will expire in the store and will be requeued.
+	// It's possible this will lead to a message being delivered more than once, and that is why we should
+	// generally be calling Stop() instead of canceling the context.
+	if xerrors.Is(err, context.Canceled) {
+		return err
 	}
+
+	n.dispatchCount.Add(1)
+
+	if err != nil {
+		retryable := msg.AttemptCount.Int32+1 < MaxAttempts
+		failure <- dispatchResult{notifier: n.id, msg: msg.ID, err: err, retryable: retryable}
+	} else {
+		success <- dispatchResult{notifier: n.id, msg: msg.ID}
+	}
+
 	return nil
+}
+
+func (n *notifier) stop() {
+	if n.stopped.Load() {
+		return
+	}
+	n.stopped.Store(true)
+	n.tick.Stop()
+	close(n.quit)
 }
