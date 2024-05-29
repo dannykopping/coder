@@ -2,6 +2,7 @@ package notifications_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -9,6 +10,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+
+	"cdr.dev/slog"
+	"cdr.dev/slog/sloggers/slogtest"
 
 	"github.com/coder/coder/v2/coderd/database"
 	"github.com/coder/coder/v2/coderd/notifications"
@@ -47,57 +51,21 @@ func TestStuff(t *testing.T) {
 
 type fakeDB struct{}
 
-func (f fakeDB) AcquireNotificationMessages(ctx context.Context, params database.AcquireNotificationMessagesParams) ([]database.NotificationMessage, error) {
-	return []database.NotificationMessage{
-		{
+func (f fakeDB) AcquireNotificationMessages(ctx context.Context, params database.AcquireNotificationMessagesParams) ([]database.AcquireNotificationMessagesRow, error) {
+	out := make([]database.AcquireNotificationMessagesRow, 10)
+	for i := 0; i < 10; i++ {
+		out = append(out, database.AcquireNotificationMessagesRow{
 			ID:                     uuid.New(),
 			Status:                 database.NotificationMessageStatusEnqueued,
 			NotificationTemplateID: uuid.New(),
-		},
-		{
-			ID:                     uuid.New(),
-			Status:                 database.NotificationMessageStatusEnqueued,
-			NotificationTemplateID: uuid.New(),
-		},
-		{
-			ID:                     uuid.New(),
-			Status:                 database.NotificationMessageStatusEnqueued,
-			NotificationTemplateID: uuid.New(),
-		},
-		{
-			ID:                     uuid.New(),
-			Status:                 database.NotificationMessageStatusEnqueued,
-			NotificationTemplateID: uuid.New(),
-		},
-		{
-			ID:                     uuid.New(),
-			Status:                 database.NotificationMessageStatusEnqueued,
-			NotificationTemplateID: uuid.New(),
-		},
-		{
-			ID:                     uuid.New(),
-			Status:                 database.NotificationMessageStatusEnqueued,
-			NotificationTemplateID: uuid.New(),
-		},
-		{
-			ID:                     uuid.New(),
-			Status:                 database.NotificationMessageStatusEnqueued,
-			NotificationTemplateID: uuid.New(),
-		},
-		{
-			ID:                     uuid.New(),
-			Status:                 database.NotificationMessageStatusEnqueued,
-			NotificationTemplateID: uuid.New(),
-		},
-		{
-			ID:                     uuid.New(),
-			Status:                 database.NotificationMessageStatusEnqueued,
-			NotificationTemplateID: uuid.New(),
-		},
-		{
-			ID:                     uuid.New(),
-			Status:                 database.NotificationMessageStatusEnqueued,
-			NotificationTemplateID: uuid.New(),
-		},
-	}, nil
+			BodyTemplate:           "body with {{.variable}}",
+			TitleTemplate:          "title with {{.variable}}",
+			Receiver:               database.NotificationReceiverSmtp,
+			Input: map[string]string{
+				"id":       fmt.Sprintf("%d", i),
+				"variable": fmt.Sprintf("ITEM %d", i+1),
+			},
+		})
+	}
+	return out, nil
 }

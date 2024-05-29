@@ -51,6 +51,9 @@ sql:
           - column: "template_usage_stats.app_usage_mins"
             go_type:
               type: "StringMapOfInt"
+          - column: "notification_messages.input"
+            go_type:
+              type: "StringMap"
         rename:
           template: TemplateTable
           template_with_user: Template

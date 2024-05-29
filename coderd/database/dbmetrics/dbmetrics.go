@@ -88,7 +88,7 @@ func (m metricsStore) AcquireLock(ctx context.Context, pgAdvisoryXactLock int64)
 	return err
 }
 
-func (m metricsStore) AcquireNotificationMessages(ctx context.Context, arg database.AcquireNotificationMessagesParams) ([]database.NotificationMessage, error) {
+func (m metricsStore) AcquireNotificationMessages(ctx context.Context, arg database.AcquireNotificationMessagesParams) ([]database.AcquireNotificationMessagesRow, error) {
 	start := time.Now()
 	r0, r1 := m.s.AcquireNotificationMessages(ctx, arg)
 	m.queryLatencies.WithLabelValues("AcquireNotificationMessages").Observe(time.Since(start).Seconds())
@@ -130,10 +130,10 @@ func (m metricsStore) BatchUpdateWorkspaceLastUsedAt(ctx context.Context, arg da
 	return r0
 }
 
-func (m metricsStore) BulkMarkNotificationMessageFailed(ctx context.Context, arg database.BulkMarkNotificationMessageFailedParams) (int64, error) {
+func (m metricsStore) BulkMarkNotificationMessagesFailed(ctx context.Context, arg database.BulkMarkNotificationMessagesFailedParams) (int64, error) {
 	start := time.Now()
-	r0, r1 := m.s.BulkMarkNotificationMessageFailed(ctx, arg)
-	m.queryLatencies.WithLabelValues("BulkMarkNotificationMessageFailed").Observe(time.Since(start).Seconds())
+	r0, r1 := m.s.BulkMarkNotificationMessagesFailed(ctx, arg)
+	m.queryLatencies.WithLabelValues("BulkMarkNotificationMessagesFailed").Observe(time.Since(start).Seconds())
 	return r0, r1
 }
 

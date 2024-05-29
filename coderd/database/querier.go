@@ -23,7 +23,7 @@ type sqlcQuerier interface {
 	// SKIP LOCKED is used to jump over locked rows. This prevents
 	// multiple notifiers from acquiring the same messages. See:
 	// https://www.postgresql.org/docs/9.5/sql-select.html#SQL-FOR-UPDATE-SHARE
-	AcquireNotificationMessages(ctx context.Context, arg AcquireNotificationMessagesParams) ([]NotificationMessage, error)
+	AcquireNotificationMessages(ctx context.Context, arg AcquireNotificationMessagesParams) ([]AcquireNotificationMessagesRow, error)
 	// Acquires the lock for a single job that isn't started, completed,
 	// canceled, and that matches an array of provisioner types.
 	//
@@ -52,7 +52,7 @@ type sqlcQuerier interface {
 	// referenced by the latest build of a workspace.
 	ArchiveUnusedTemplateVersions(ctx context.Context, arg ArchiveUnusedTemplateVersionsParams) ([]uuid.UUID, error)
 	BatchUpdateWorkspaceLastUsedAt(ctx context.Context, arg BatchUpdateWorkspaceLastUsedAtParams) error
-	BulkMarkNotificationMessageFailed(ctx context.Context, arg BulkMarkNotificationMessageFailedParams) (int64, error)
+	BulkMarkNotificationMessagesFailed(ctx context.Context, arg BulkMarkNotificationMessagesFailedParams) (int64, error)
 	BulkMarkNotificationMessagesInhibited(ctx context.Context, arg BulkMarkNotificationMessagesInhibitedParams) (int64, error)
 	BulkMarkNotificationMessagesSent(ctx context.Context, arg BulkMarkNotificationMessagesSentParams) (int64, error)
 	CleanTailnetCoordinators(ctx context.Context) error

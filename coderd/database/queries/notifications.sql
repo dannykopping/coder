@@ -25,51 +25,57 @@ RETURNING *;
 -- multiple notifiers from acquiring the same messages. See:
 -- https://www.postgresql.org/docs/9.5/sql-select.html#SQL-FOR-UPDATE-SHARE
 -- name: AcquireNotificationMessages :many
-UPDATE
-    notification_messages
-SET updated_at    = NOW(),
-    status        = 'enqueued'::notification_message_status,
-    status_reason = 'Enqueued by notifier ' || sqlc.arg('notifier_id')::uuid,
-    leased_until  = sqlc.arg('leased_until')::time
-WHERE id = (SELECT nm.id,
-                   nt.id,
-                   nt.title_template,
-                   nt.body_template,
-                   nm.input
-            FROM notification_messages AS nm
-                     LEFT JOIN notification_templates AS nt ON (nm.notification_template_id = nt.id)
-                     LEFT JOIN notification_preferences np ON (np.notification_template_id = nt.id)
-            WHERE (
-                (
-                    -- message is in acquirable states
-                    nm.status NOT IN (
-                        -- don't enqueue currently enqueued messages
-                                      'enqueued'::notification_message_status,
-                        -- don't enqueue inhibited messages (these will get deleted)
-                                      'inhibited'::notification_message_status
-                        )
-                    )
-                    -- or somehow the message was left in enqueued for longer than its lease period
-                    OR (
-                    nm.status = 'enqueued'::notification_message_status
-                        AND nm.leased_until < NOW()
-                    )
-                )
-              -- exclude all messages which have exceeded the max attempts; these will be purged later
-              AND (nm.attempt_count < sqlc.arg('max_attempt_count')::int)
-              -- if set, do not retry until we've exceeded the wait time
-              AND (nm.next_retry_after IS NOT NULL AND nm.next_retry_after < NOW())
-              -- only enqueue if user/org has not disabled this template
-              AND (np.disabled = FALSE
-                AND (np.user_id = sqlc.arg('user_id')::uuid OR np.org_id = sqlc.arg('org_id')::uuid)
-                )
-            ORDER BY nm.created_at ASC
-                FOR UPDATE
-                    SKIP LOCKED
-            LIMIT sqlc.arg('count'))
-RETURNING *;
+WITH acquired AS (
+    UPDATE
+        notification_messages
+            SET updated_at = NOW(),
+                status = 'enqueued'::notification_message_status,
+                status_reason = 'Enqueued by notifier ' || sqlc.arg('notifier_id')::uuid,
+                leased_until = sqlc.arg('leased_until')::time
+            WHERE id = (SELECT nm.id,
+                               nt.id,
+                               nt.title_template,
+                               nt.body_template,
+                               nm.input
+                        FROM notification_messages AS nm
+                                 LEFT JOIN notification_templates AS nt ON (nm.notification_template_id = nt.id)
+                                 LEFT JOIN notification_preferences np ON (np.notification_template_id = nt.id)
+                        WHERE (
+                            (
+                                -- message is in acquirable states
+                                nm.status NOT IN (
+                                    -- don't enqueue currently enqueued messages
+                                                  'enqueued'::notification_message_status,
+                                    -- don't enqueue inhibited messages (these will get deleted)
+                                                  'inhibited'::notification_message_status
+                                    )
+                                )
+                                -- or somehow the message was left in enqueued for longer than its lease period
+                                OR (
+                                nm.status = 'enqueued'::notification_message_status
+                                    AND nm.leased_until < NOW()
+                                )
+                            )
+                          -- exclude all messages which have exceeded the max attempts; these will be purged later
+                          AND (nm.attempt_count < sqlc.arg('max_attempt_count')::int)
+                          -- if set, do not retry until we've exceeded the wait time
+                          AND (nm.next_retry_after IS NOT NULL AND nm.next_retry_after < NOW())
+                          -- only enqueue if user/org has not disabled this template
+                          AND (np.disabled = FALSE
+                            AND (np.user_id = sqlc.arg('user_id')::uuid OR np.org_id = sqlc.arg('org_id')::uuid)
+                            )
+                        ORDER BY nm.created_at ASC
+                            FOR UPDATE
+                                SKIP LOCKED
+                        LIMIT sqlc.arg('count'))
+        RETURNING id
+)
+SELECT nm.*, nt.name AS template_name, nt.title_template, nt.body_template
+FROM acquired
+         JOIN notification_messages nm ON acquired.id = nm.id
+         JOIN notification_templates nt ON nm.notification_template_id = nt.id;
 
--- name: BulkMarkNotificationMessageFailed :execrows
+-- name: BulkMarkNotificationMessagesFailed :execrows
 WITH new_values AS (SELECT UNNEST(@ids::uuid[])               AS id,
                            UNNEST(@failed_ats::timestamptz[]) AS failed_at,
                            UNNEST(@statuses::text[])          AS status,

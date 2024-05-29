@@ -13,7 +13,7 @@ import (
 
 type SMTPDispatcher struct{}
 
-func (S *SMTPDispatcher) Send(ctx context.Context, msg database.NotificationMessage, title, body string) error {
+func (s *SMTPDispatcher) Send(ctx context.Context, input database.StringMap, title, body string) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -34,7 +34,7 @@ func (S *SMTPDispatcher) Send(ctx context.Context, msg database.NotificationMess
 	}
 
 	if rand.IntN(10) < 5 {
-		return xerrors.New(fmt.Sprintf("%s: oops", msg.ID))
+		return xerrors.New(fmt.Sprintf("oops"))
 	}
 	return nil
 }

@@ -2,10 +2,11 @@ package notifications
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 	"time"
 
+	"cdr.dev/slog"
+	"github.com/coder/coder/v2/coderd/notifications/renderer"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/xerrors"
@@ -15,38 +16,47 @@ import (
 )
 
 const (
-	NotifierQueueSize   = 10
-	NotifierLeaseLength = time.Minute * 10
+	// TODO: configurable?
+	NotifierQueueSize     = 10
+	NotifierLeaseLength   = time.Minute * 10
+	NotifierFetchInterval = time.Second * 15
 )
 
 type notifier struct {
-	id            uuid.UUID
-	q             []database.NotificationMessage
-	store         Store
-	ctx           context.Context
-	dispatchCount atomic.Int32
+	id    uuid.UUID
+	ctx   context.Context
+	log   slog.Logger
+	store Store
 
-	tick    *time.Ticker
-	stopped atomic.Bool
-	quit    chan any
-	smtp    dispatcher.SMTPDispatcher
+	tick           *time.Ticker
+	stopped        atomic.Bool
+	quit           chan any
+	dispatcherSMTP dispatcher.SMTPDispatcher
+	rendererText   renderer.TextRenderer
+	rendererHTML   renderer.HTMLRenderer
 }
 
-func newNotifier(ctx context.Context, db Store) *notifier {
+func newNotifier(ctx context.Context, log slog.Logger, db Store) *notifier {
+	id := uuid.New()
 	return &notifier{
-		id:    uuid.New(),
-		ctx:   ctx,
-		q:     make([]database.NotificationMessage, NotifierQueueSize),
-		quit:  make(chan any),
-		tick:  time.NewTicker(time.Second * 15),
-		store: db,
-		smtp:  dispatcher.SMTPDispatcher{},
+		id:             id,
+		ctx:            ctx,
+		log:            log.With(slog.F("notifier", id)),
+		quit:           make(chan any),
+		tick:           time.NewTicker(NotifierFetchInterval),
+		store:          db,
+		dispatcherSMTP: dispatcher.SMTPDispatcher{},
+		rendererHTML:   renderer.HTMLRenderer{},
 	}
 }
 
 func (n *notifier) run(ctx context.Context, success chan<- dispatchResult, failure chan<- dispatchResult) error {
 	defer n.tick.Stop()
 
+	// TODO: idea from Cian: instead of querying the database on a short interval, we could wait for pubsub notifications.
+	//		 if 100 notifications are enqueued, we shouldn't activate this routine for each one; so how to debounce these?
+	//		 PLUS we should also have an interval (but a longer one, maybe 1m) to account for retries (those will not get
+	//		 triggered by a code path, but rather by a timeout expiring which makes the message retryable)
 	for {
 		err := n.process(ctx, success, failure)
 		if err != nil {
@@ -65,49 +75,46 @@ func (n *notifier) run(ctx context.Context, success chan<- dispatchResult, failu
 }
 
 func (n *notifier) process(ctx context.Context, success chan<- dispatchResult, failure chan<- dispatchResult) error {
-	fmt.Printf("[%s] TICK!\n", n.id)
+	n.log.Debug(ctx, "attempting to dequeue messages")
 
 	msgs, err := n.fetch(ctx)
 	if err != nil {
 		return xerrors.Errorf("fetch messages: %w", err)
 	}
 
-	eg, egCtx := errgroup.WithContext(ctx)
-	egCtx, cancel := context.WithCancel(egCtx)
+	dispatches, dCtx := errgroup.WithContext(ctx)
+	dCtx, cancel := context.WithCancel(dCtx)
+	defer cancel()
+
 	for _, msg := range msgs {
-		eg.Go(func() error {
-			x := n.dispatch(ctx, msg, success, failure)
-			fmt.Printf("[%s] [%s] %v\n", n.id, msg.ID, x)
-			return x
+		dispatches.Go(func() error {
+			// Dispatch must only return an error for exceptional cases, NOT for failed messages.
+			// The first message to return an error cancels the errgroup's context.
+			return n.dispatch(ctx, msg, success, failure)
 		})
 	}
 
 	select {
-	// Bail out if context canceled or notifier is stopped.
 	case <-ctx.Done():
-		fmt.Printf("canceled! %s\n", ctx.Err())
-		cancel()
+		n.log.Warn(context.Background(), "context canceled")
 		return ctx.Err()
 	case <-n.quit:
-		fmt.Printf("stopped!\n")
-		cancel()
-		return xerrors.New("stopped")
-
+		n.log.Warn(ctx, "gracefully stopped")
+		return nil
 	// Wait for all dispatches to complete or for a timeout, whichever comes first.
-	case <-egCtx.Done():
-		fmt.Printf("dispatch ended: %s\n", egCtx.Err())
-		cancel()
-	// TODO: chaos monkey, remove
-	case <-time.After(time.Millisecond * 450):
-		fmt.Printf("timeout!\n")
-		cancel()
+	case <-dCtx.Done():
+		if dCtx.Err() != nil {
+			n.log.Error(ctx, "dispatch failed", slog.Error(dCtx.Err()))
+		}
+		return nil
+	default:
 	}
 
-	fmt.Printf("[%s]>>>>GOT TO END\n", n.id)
+	n.log.Debug(ctx, "dispatch completed", slog.F("count", len(msgs)))
 	return nil
 }
 
-func (n *notifier) fetch(ctx context.Context) ([]database.NotificationMessage, error) {
+func (n *notifier) fetch(ctx context.Context) ([]database.AcquireNotificationMessagesRow, error) {
 	ctx, cancel := context.WithTimeout(ctx, NotifierLeaseLength)
 	deadline, _ := ctx.Deadline()
 	defer cancel()
@@ -126,7 +133,7 @@ func (n *notifier) fetch(ctx context.Context) ([]database.NotificationMessage, e
 	return msgs, nil
 }
 
-func (n *notifier) dispatch(ctx context.Context, msg database.NotificationMessage, success, failure chan<- dispatchResult) error {
+func (n *notifier) dispatch(ctx context.Context, msg database.AcquireNotificationMessagesRow, success, failure chan<- dispatchResult) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -136,7 +143,20 @@ func (n *notifier) dispatch(ctx context.Context, msg database.NotificationMessag
 	ctx, cancel := context.WithTimeout(ctx, time.Second*10) // TODO: configurable
 	defer cancel()
 
-	err := n.smtp.Send(ctx, msg, "my title", "my body")
+	var err error
+	switch msg.Receiver {
+	case database.NotificationReceiverSmtp:
+		var title, body string
+		if title, err = n.rendererText.Render(msg.TitleTemplate, msg.Input); err != nil {
+			break
+		}
+		if body, err = n.rendererHTML.Render(msg.BodyTemplate, msg.Input); err != nil {
+			break
+		}
+		err = n.dispatcherSMTP.Send(ctx, msg.Input, title, body)
+	default:
+		err = xerrors.Errorf("unrecognised receiver: %s", msg.Receiver)
+	}
 
 	// Don't try to accumulate message responses if the context has been canceled.
 	// This message's lease will expire in the store and will be requeued.
@@ -145,8 +165,6 @@ func (n *notifier) dispatch(ctx context.Context, msg database.NotificationMessag
 	if xerrors.Is(err, context.Canceled) {
 		return err
 	}
-
-	n.dispatchCount.Add(1)
 
 	if err != nil {
 		retryable := msg.AttemptCount.Int32+1 < MaxAttempts

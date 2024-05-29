@@ -904,7 +904,7 @@ func (*FakeQuerier) AcquireLock(_ context.Context, _ int64) error {
 	return xerrors.New("AcquireLock must only be called within a transaction")
 }
 
-func (q *FakeQuerier) AcquireNotificationMessages(ctx context.Context, arg database.AcquireNotificationMessagesParams) ([]database.NotificationMessage, error) {
+func (q *FakeQuerier) AcquireNotificationMessages(ctx context.Context, arg database.AcquireNotificationMessagesParams) ([]database.AcquireNotificationMessagesRow, error) {
 	err := validateDatabaseType(arg)
 	if err != nil {
 		return nil, err
@@ -1175,7 +1175,7 @@ func (q *FakeQuerier) BatchUpdateWorkspaceLastUsedAt(_ context.Context, arg data
 	return nil
 }
 
-func (q *FakeQuerier) BulkMarkNotificationMessageFailed(ctx context.Context, arg database.BulkMarkNotificationMessageFailedParams) (int64, error) {
+func (q *FakeQuerier) BulkMarkNotificationMessagesFailed(ctx context.Context, arg database.BulkMarkNotificationMessagesFailedParams) (int64, error) {
 	err := validateDatabaseType(arg)
 	if err != nil {
 		return 0, err

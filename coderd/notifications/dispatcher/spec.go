@@ -7,5 +7,5 @@ import (
 )
 
 type dispatcher interface {
-	Send(ctx context.Context, msg database.NotificationMessage, title, body string) error // TODO: don't use database type
+	Send(ctx context.Context, input database.StringMap, title, body string) error
 }

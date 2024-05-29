@@ -2015,7 +2015,7 @@ type NotificationMessage struct {
 	Status                 NotificationMessageStatus `db:"status" json:"status"`
 	StatusReason           sql.NullString            `db:"status_reason" json:"status_reason"`
 	CreatedBy              string                    `db:"created_by" json:"created_by"`
-	Input                  json.RawMessage           `db:"input" json:"input"`
+	Input                  StringMap                 `db:"input" json:"input"`
 	AttemptCount           sql.NullInt32             `db:"attempt_count" json:"attempt_count"`
 	Targets                []uuid.UUID               `db:"targets" json:"targets"`
 	CreatedAt              time.Time                 `db:"created_at" json:"created_at"`
