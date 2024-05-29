@@ -3235,7 +3235,7 @@ WHERE id = (SELECT nm.id,
                 FOR UPDATE
                     SKIP LOCKED
             LIMIT $6)
-RETURNING id, notification_template_id, status, status_reason, created_by, input, attempt_count, created_at, updated_at, leased_until, next_retry_after, sent_at, failed_at, targets, dedupe_hash
+RETURNING id, notification_template_id, receiver, status, status_reason, created_by, input, attempt_count, targets, created_at, updated_at, leased_until, next_retry_after, sent_at, failed_at, dedupe_hash
 `
 
 type AcquireNotificationMessagesParams struct {
@@ -3272,18 +3272,19 @@ func (q *sqlQuerier) AcquireNotificationMessages(ctx context.Context, arg Acquir
 		if err := rows.Scan(
 			&i.ID,
 			&i.NotificationTemplateID,
+			&i.Receiver,
 			&i.Status,
 			&i.StatusReason,
 			&i.CreatedBy,
 			&i.Input,
 			&i.AttemptCount,
+			pq.Array(&i.Targets),
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.LeasedUntil,
 			&i.NextRetryAfter,
 			&i.SentAt,
 			&i.FailedAt,
-			pq.Array(&i.Targets),
 			&i.DedupeHash,
 		); err != nil {
 			return nil, err
@@ -3300,10 +3301,10 @@ func (q *sqlQuerier) AcquireNotificationMessages(ctx context.Context, arg Acquir
 }
 
 const bulkMarkNotificationMessageFailed = `-- name: BulkMarkNotificationMessageFailed :execrows
-WITH new_values AS (SELECT UNNEST($1::uuid[])             AS id,
+WITH new_values AS (SELECT UNNEST($1::uuid[])               AS id,
                            UNNEST($2::timestamptz[]) AS failed_at,
-                           UNNEST($3::text[]) AS status,
-                           UNNEST($4::text[]) AS status_reason)
+                           UNNEST($3::text[])          AS status,
+                           UNNEST($4::text[])    AS status_reason)
 UPDATE notification_messages
 SET updated_at       = NOW(),
     attempt_count    = attempt_count + 1,
@@ -3420,50 +3421,51 @@ func (q *sqlQuerier) DeleteOldNotificationMessages(ctx context.Context, maxAttem
 }
 
 const enqueueNotificationMessage = `-- name: EnqueueNotificationMessage :one
-INSERT INTO notification_messages (id, notification_template_id, input, targets, dedupe_hash, created_by)
+INSERT INTO notification_messages (id, notification_template_id, receiver, input, targets, created_by)
 VALUES ($1,
         $2,
-        $3,
-        $4,
+        $3::notification_receiver,
+        $4::jsonb,
         $5,
         $6)
-RETURNING id, notification_template_id, status, status_reason, created_by, input, attempt_count, created_at, updated_at, leased_until, next_retry_after, sent_at, failed_at, targets, dedupe_hash
+RETURNING id, notification_template_id, receiver, status, status_reason, created_by, input, attempt_count, targets, created_at, updated_at, leased_until, next_retry_after, sent_at, failed_at, dedupe_hash
 `
 
 type EnqueueNotificationMessageParams struct {
-	ID                     uuid.UUID             `db:"id" json:"id"`
-	NotificationTemplateID uuid.UUID             `db:"notification_template_id" json:"notification_template_id"`
-	Input                  pqtype.NullRawMessage `db:"input" json:"input"`
-	Targets                []uuid.UUID           `db:"targets" json:"targets"`
-	DedupeHash             string                `db:"dedupe_hash" json:"dedupe_hash"`
-	CreatedBy              string                `db:"created_by" json:"created_by"`
+	ID                     uuid.UUID            `db:"id" json:"id"`
+	NotificationTemplateID uuid.UUID            `db:"notification_template_id" json:"notification_template_id"`
+	Receiver               NotificationReceiver `db:"receiver" json:"receiver"`
+	Input                  json.RawMessage      `db:"input" json:"input"`
+	Targets                []uuid.UUID          `db:"targets" json:"targets"`
+	CreatedBy              string               `db:"created_by" json:"created_by"`
 }
 
 func (q *sqlQuerier) EnqueueNotificationMessage(ctx context.Context, arg EnqueueNotificationMessageParams) (NotificationMessage, error) {
 	row := q.db.QueryRowContext(ctx, enqueueNotificationMessage,
 		arg.ID,
 		arg.NotificationTemplateID,
+		arg.Receiver,
 		arg.Input,
 		pq.Array(arg.Targets),
-		arg.DedupeHash,
 		arg.CreatedBy,
 	)
 	var i NotificationMessage
 	err := row.Scan(
 		&i.ID,
 		&i.NotificationTemplateID,
+		&i.Receiver,
 		&i.Status,
 		&i.StatusReason,
 		&i.CreatedBy,
 		&i.Input,
 		&i.AttemptCount,
+		pq.Array(&i.Targets),
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LeasedUntil,
 		&i.NextRetryAfter,
 		&i.SentAt,
 		&i.FailedAt,
-		pq.Array(&i.Targets),
 		&i.DedupeHash,
 	)
 	return i, err

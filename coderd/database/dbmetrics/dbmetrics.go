@@ -81,13 +81,6 @@ func (m metricsStore) InTx(f func(database.Store) error, options *sql.TxOptions)
 	return err
 }
 
-func (m metricsStore) InsertNotificationMessage(ctx context.Context, arg database.InsertNotificationMessageParams) (database.NotificationMessage, error) {
-	start := time.Now()
-	r0, r1 := m.s.InsertNotificationMessage(ctx, arg)
-	m.queryLatencies.WithLabelValues("InsertNotificationMessage").Observe(time.Since(start).Seconds())
-	return r0, r1
-}
-
 func (m metricsStore) AcquireLock(ctx context.Context, pgAdvisoryXactLock int64) error {
 	start := time.Now()
 	err := m.s.AcquireLock(ctx, pgAdvisoryXactLock)
@@ -300,7 +293,7 @@ func (m metricsStore) DeleteOAuth2ProviderAppTokensByAppAndUserID(ctx context.Co
 
 func (m metricsStore) DeleteOldNotificationMessages(ctx context.Context, maxAttemptCount int32) error {
 	start := time.Now()
-	r0 := m.s.DeleteOldNotificationMessages(ctx)
+	r0 := m.s.DeleteOldNotificationMessages(ctx, maxAttemptCount)
 	m.queryLatencies.WithLabelValues("DeleteOldNotificationMessages").Observe(time.Since(start).Seconds())
 	return r0
 }

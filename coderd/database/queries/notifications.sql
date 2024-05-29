@@ -9,13 +9,13 @@ VALUES ($1,
 RETURNING *;
 
 -- name: EnqueueNotificationMessage :one
-INSERT INTO notification_messages (id, notification_template_id, input, targets, dedupe_hash, created_by)
-VALUES ($1,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6)
+INSERT INTO notification_messages (id, notification_template_id, receiver, input, targets, created_by)
+VALUES (@id,
+        @notification_template_id,
+        @receiver::notification_receiver,
+        @input::jsonb,
+        @targets,
+        @created_by)
 RETURNING *;
 
 -- Acquires the lease for a given count of notification messages that aren't already locked, or ones which are leased

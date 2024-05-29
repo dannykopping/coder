@@ -766,10 +766,6 @@ func (q *querier) customRoleEscalationCheck(ctx context.Context, actor rbac.Subj
 	return nil
 }
 
-func (q *querier) InsertNotificationMessage(ctx context.Context, arg database.InsertNotificationMessageParams) (database.NotificationMessage, error) {
-	panic("not implemented")
-}
-
 func (q *querier) AcquireLock(ctx context.Context, id int64) error {
 	return q.db.AcquireLock(ctx, id)
 }

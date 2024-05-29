@@ -733,6 +733,64 @@ func AllNotificationMessageStatusValues() []NotificationMessageStatus {
 	}
 }
 
+type NotificationReceiver string
+
+const (
+	NotificationReceiverSmtp    NotificationReceiver = "smtp"
+	NotificationReceiverWebhook NotificationReceiver = "webhook"
+)
+
+func (e *NotificationReceiver) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = NotificationReceiver(s)
+	case string:
+		*e = NotificationReceiver(s)
+	default:
+		return fmt.Errorf("unsupported scan type for NotificationReceiver: %T", src)
+	}
+	return nil
+}
+
+type NullNotificationReceiver struct {
+	NotificationReceiver NotificationReceiver `json:"notification_receiver"`
+	Valid                bool                 `json:"valid"` // Valid is true if NotificationReceiver is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullNotificationReceiver) Scan(value interface{}) error {
+	if value == nil {
+		ns.NotificationReceiver, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.NotificationReceiver.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullNotificationReceiver) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.NotificationReceiver), nil
+}
+
+func (e NotificationReceiver) Valid() bool {
+	switch e {
+	case NotificationReceiverSmtp,
+		NotificationReceiverWebhook:
+		return true
+	}
+	return false
+}
+
+func AllNotificationReceiverValues() []NotificationReceiver {
+	return []NotificationReceiver{
+		NotificationReceiverSmtp,
+		NotificationReceiverWebhook,
+	}
+}
+
 type ParameterDestinationScheme string
 
 const (
@@ -1953,19 +2011,21 @@ type License struct {
 type NotificationMessage struct {
 	ID                     uuid.UUID                 `db:"id" json:"id"`
 	NotificationTemplateID uuid.UUID                 `db:"notification_template_id" json:"notification_template_id"`
+	Receiver               NotificationReceiver      `db:"receiver" json:"receiver"`
 	Status                 NotificationMessageStatus `db:"status" json:"status"`
 	StatusReason           sql.NullString            `db:"status_reason" json:"status_reason"`
 	CreatedBy              string                    `db:"created_by" json:"created_by"`
-	Input                  pqtype.NullRawMessage     `db:"input" json:"input"`
+	Input                  json.RawMessage           `db:"input" json:"input"`
 	AttemptCount           sql.NullInt32             `db:"attempt_count" json:"attempt_count"`
+	Targets                []uuid.UUID               `db:"targets" json:"targets"`
 	CreatedAt              time.Time                 `db:"created_at" json:"created_at"`
 	UpdatedAt              sql.NullTime              `db:"updated_at" json:"updated_at"`
 	LeasedUntil            sql.NullTime              `db:"leased_until" json:"leased_until"`
 	NextRetryAfter         sql.NullTime              `db:"next_retry_after" json:"next_retry_after"`
 	SentAt                 sql.NullTime              `db:"sent_at" json:"sent_at"`
 	FailedAt               sql.NullTime              `db:"failed_at" json:"failed_at"`
-	Targets                []uuid.UUID               `db:"targets" json:"targets"`
-	DedupeHash             string                    `db:"dedupe_hash" json:"dedupe_hash"`
+	// Auto-generated at insertion time
+	DedupeHash string `db:"dedupe_hash" json:"dedupe_hash"`
 }
 
 type NotificationPreference struct {
