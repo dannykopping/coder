@@ -1959,7 +1959,7 @@ type NotificationMessage struct {
 	Input                  pqtype.NullRawMessage     `db:"input" json:"input"`
 	AttemptCount           sql.NullInt32             `db:"attempt_count" json:"attempt_count"`
 	CreatedAt              time.Time                 `db:"created_at" json:"created_at"`
-	UpdatedAt              time.Time                 `db:"updated_at" json:"updated_at"`
+	UpdatedAt              sql.NullTime              `db:"updated_at" json:"updated_at"`
 	LeasedUntil            sql.NullTime              `db:"leased_until" json:"leased_until"`
 	NextRetryAfter         sql.NullTime              `db:"next_retry_after" json:"next_retry_after"`
 	SentAt                 sql.NullTime              `db:"sent_at" json:"sent_at"`

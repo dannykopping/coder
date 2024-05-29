@@ -3223,25 +3223,28 @@ WHERE id = (SELECT nm.id,
                         AND nm.leased_until < NOW()
                     )
                 )
+              -- exclude all messages which have exceeded the max attempts; these will be purged later
+              AND (nm.attempt_count < $3::int)
               -- if set, do not retry until we've exceeded the wait time
               AND (nm.next_retry_after IS NOT NULL AND nm.next_retry_after < NOW())
               -- only enqueue if user/org has not disabled this template
               AND (np.disabled = FALSE
-                AND (np.user_id = $3::uuid OR np.org_id = $4::uuid)
+                AND (np.user_id = $4::uuid OR np.org_id = $5::uuid)
                 )
             ORDER BY nm.created_at ASC
                 FOR UPDATE
                     SKIP LOCKED
-            LIMIT $5)
+            LIMIT $6)
 RETURNING id, notification_template_id, status, status_reason, created_by, input, attempt_count, created_at, updated_at, leased_until, next_retry_after, sent_at, failed_at, targets, dedupe_hash
 `
 
 type AcquireNotificationMessagesParams struct {
-	NotifierID  uuid.UUID `db:"notifier_id" json:"notifier_id"`
-	LeasedUntil time.Time `db:"leased_until" json:"leased_until"`
-	UserID      uuid.UUID `db:"user_id" json:"user_id"`
-	OrgID       uuid.UUID `db:"org_id" json:"org_id"`
-	Count       int32     `db:"count" json:"count"`
+	NotifierID      uuid.UUID `db:"notifier_id" json:"notifier_id"`
+	LeasedUntil     time.Time `db:"leased_until" json:"leased_until"`
+	MaxAttemptCount int32     `db:"max_attempt_count" json:"max_attempt_count"`
+	UserID          uuid.UUID `db:"user_id" json:"user_id"`
+	OrgID           uuid.UUID `db:"org_id" json:"org_id"`
+	Count           int32     `db:"count" json:"count"`
 }
 
 // Acquires the lease for a given count of notification messages that aren't already locked, or ones which are leased
@@ -3254,6 +3257,7 @@ func (q *sqlQuerier) AcquireNotificationMessages(ctx context.Context, arg Acquir
 	rows, err := q.db.QueryContext(ctx, acquireNotificationMessages,
 		arg.NotifierID,
 		arg.LeasedUntil,
+		arg.MaxAttemptCount,
 		arg.UserID,
 		arg.OrgID,
 		arg.Count,
@@ -3295,27 +3299,123 @@ func (q *sqlQuerier) AcquireNotificationMessages(ctx context.Context, arg Acquir
 	return items, nil
 }
 
+const bulkMarkNotificationMessageFailed = `-- name: BulkMarkNotificationMessageFailed :execrows
+WITH new_values AS (SELECT UNNEST($1::uuid[])             AS id,
+                           UNNEST($2::timestamptz[]) AS failed_at,
+                           UNNEST($3::text[]) AS status,
+                           UNNEST($4::text[]) AS status_reason)
+UPDATE notification_messages
+SET updated_at       = NOW(),
+    attempt_count    = attempt_count + 1,
+    status           = subquery.status,
+    status_reason    = subquery.status_reason,
+    failed_at        = subquery.failed_at,
+    next_retry_after = NOW() + INTERVAL '10m' -- TODO: configurable? This will also be irrelevant for messages which have exceeded their attempts
+FROM (SELECT id, status, status_reason, failed_at
+      FROM new_values) AS subquery
+WHERE notification_messages.id = subquery.id
+`
+
+type BulkMarkNotificationMessageFailedParams struct {
+	IDs           []uuid.UUID `db:"ids" json:"ids"`
+	FailedAts     []time.Time `db:"failed_ats" json:"failed_ats"`
+	Statuses      []string    `db:"statuses" json:"statuses"`
+	StatusReasons []string    `db:"status_reasons" json:"status_reasons"`
+}
+
+func (q *sqlQuerier) BulkMarkNotificationMessageFailed(ctx context.Context, arg BulkMarkNotificationMessageFailedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, bulkMarkNotificationMessageFailed,
+		pq.Array(arg.IDs),
+		pq.Array(arg.FailedAts),
+		pq.Array(arg.Statuses),
+		pq.Array(arg.StatusReasons),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const bulkMarkNotificationMessagesInhibited = `-- name: BulkMarkNotificationMessagesInhibited :execrows
+UPDATE notification_messages
+SET updated_at       = NOW(),
+    status           = 'inhibited'::notification_message_status,
+    status_reason    = $1,
+    sent_at          = NULL,
+    failed_at        = NULL,
+    next_retry_after = NULL
+WHERE notification_messages.id IN (UNNEST($2::uuid[]))
+`
+
+type BulkMarkNotificationMessagesInhibitedParams struct {
+	Reason sql.NullString `db:"reason" json:"reason"`
+	IDs    []uuid.UUID    `db:"ids" json:"ids"`
+}
+
+func (q *sqlQuerier) BulkMarkNotificationMessagesInhibited(ctx context.Context, arg BulkMarkNotificationMessagesInhibitedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, bulkMarkNotificationMessagesInhibited, arg.Reason, pq.Array(arg.IDs))
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const bulkMarkNotificationMessagesSent = `-- name: BulkMarkNotificationMessagesSent :execrows
+WITH new_values AS (SELECT UNNEST($1::uuid[])             AS id,
+                           UNNEST($2::timestamptz[]) AS sent_at)
+UPDATE notification_messages
+SET updated_at       = NOW(),
+    status           = 'sent'::notification_message_status,
+    sent_at          = subquery.sent_at,
+    leased_until     = NULL,
+    next_retry_after = NULL
+FROM (SELECT id, sent_at
+      FROM new_values) AS subquery
+WHERE notification_messages.id = subquery.id
+`
+
+type BulkMarkNotificationMessagesSentParams struct {
+	IDs     []uuid.UUID `db:"ids" json:"ids"`
+	SentAts []time.Time `db:"sent_ats" json:"sent_ats"`
+}
+
+func (q *sqlQuerier) BulkMarkNotificationMessagesSent(ctx context.Context, arg BulkMarkNotificationMessagesSentParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, bulkMarkNotificationMessagesSent, pq.Array(arg.IDs), pq.Array(arg.SentAts))
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteOldNotificationMessages = `-- name: DeleteOldNotificationMessages :exec
 DELETE
 FROM notification_messages
 WHERE id =
       (SELECT id
        FROM notification_messages AS nested
+       -- delete ALL week-old messages
        WHERE nested.updated_at < NOW() - INTERVAL '7 days'
           OR (
+           -- delete sent messages after 1 day
            nested.status = 'sent'::notification_message_status AND nested.sent_at < (NOW() - INTERVAL '1 days')
            )
           OR (
+           -- delete messages which have exceeded their attempt count after 1 day
+           nested.attempt_count >= $1::int AND nested.sent_at < (NOW() - INTERVAL '1 days')
+           )
+          OR (
+           -- delete inhibited messages after 1 day
            nested.status = 'inhibited'::notification_message_status AND
            nested.updated_at < (NOW() - INTERVAL '1 days')
            )
+          -- ensure we don't clash with the notifier
            FOR UPDATE SKIP LOCKED)
 `
 
 // Delete all notification messages which have not been updated for over a week.
 // Delete all sent or inhibited messages which are over a day old.
-func (q *sqlQuerier) DeleteOldNotificationMessages(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteOldNotificationMessages)
+func (q *sqlQuerier) DeleteOldNotificationMessages(ctx context.Context, maxAttemptCount int32) error {
+	_, err := q.db.ExecContext(ctx, deleteOldNotificationMessages, maxAttemptCount)
 	return err
 }
 
@@ -3406,136 +3506,6 @@ func (q *sqlQuerier) InsertNotificationTemplate(ctx context.Context, arg InsertN
 		&i.TitleTemplate,
 		&i.BodyTemplate,
 		&i.Group,
-	)
-	return i, err
-}
-
-const markNotificationMessageFailed = `-- name: MarkNotificationMessageFailed :one
-UPDATE notification_messages
-SET updated_at       = NOW(),
-    attempt_count    = attempt_count + 1,
-    status           = $1,
-    status_reason    = $2,
-    failed_at        = $3::time,
-    next_retry_after = $4::time -- optional: retries may have been exceeded
-WHERE id = $5
-RETURNING id, notification_template_id, status, status_reason, created_by, input, attempt_count, created_at, updated_at, leased_until, next_retry_after, sent_at, failed_at, targets, dedupe_hash
-`
-
-type MarkNotificationMessageFailedParams struct {
-	Status         NotificationMessageStatus `db:"status" json:"status"`
-	Reason         sql.NullString            `db:"reason" json:"reason"`
-	FailedAt       time.Time                 `db:"failed_at" json:"failed_at"`
-	NextRetryAfter sql.NullTime              `db:"next_retry_after" json:"next_retry_after"`
-	ID             uuid.UUID                 `db:"id" json:"id"`
-}
-
-func (q *sqlQuerier) MarkNotificationMessageFailed(ctx context.Context, arg MarkNotificationMessageFailedParams) (NotificationMessage, error) {
-	row := q.db.QueryRowContext(ctx, markNotificationMessageFailed,
-		arg.Status,
-		arg.Reason,
-		arg.FailedAt,
-		arg.NextRetryAfter,
-		arg.ID,
-	)
-	var i NotificationMessage
-	err := row.Scan(
-		&i.ID,
-		&i.NotificationTemplateID,
-		&i.Status,
-		&i.StatusReason,
-		&i.CreatedBy,
-		&i.Input,
-		&i.AttemptCount,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.LeasedUntil,
-		&i.NextRetryAfter,
-		&i.SentAt,
-		&i.FailedAt,
-		pq.Array(&i.Targets),
-		&i.DedupeHash,
-	)
-	return i, err
-}
-
-const markNotificationMessageSent = `-- name: MarkNotificationMessageSent :one
-UPDATE notification_messages
-SET updated_at       = NOW(),
-    status           = 'sent'::notification_message_status,
-    sent_at          = $1::time,
-    leased_until     = NULL,
-    next_retry_after = NULL
-WHERE id = $2
-RETURNING id, notification_template_id, status, status_reason, created_by, input, attempt_count, created_at, updated_at, leased_until, next_retry_after, sent_at, failed_at, targets, dedupe_hash
-`
-
-type MarkNotificationMessageSentParams struct {
-	SentAt time.Time `db:"sent_at" json:"sent_at"`
-	ID     uuid.UUID `db:"id" json:"id"`
-}
-
-func (q *sqlQuerier) MarkNotificationMessageSent(ctx context.Context, arg MarkNotificationMessageSentParams) (NotificationMessage, error) {
-	row := q.db.QueryRowContext(ctx, markNotificationMessageSent, arg.SentAt, arg.ID)
-	var i NotificationMessage
-	err := row.Scan(
-		&i.ID,
-		&i.NotificationTemplateID,
-		&i.Status,
-		&i.StatusReason,
-		&i.CreatedBy,
-		&i.Input,
-		&i.AttemptCount,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.LeasedUntil,
-		&i.NextRetryAfter,
-		&i.SentAt,
-		&i.FailedAt,
-		pq.Array(&i.Targets),
-		&i.DedupeHash,
-	)
-	return i, err
-}
-
-const markNotificationMessagesInhibited = `-- name: MarkNotificationMessagesInhibited :one
-UPDATE notification_messages
-SET updated_at       = NOW(),
-    status           = 'inhibited'::notification_message_status,
-    status_reason    = $1,
-    sent_at          = NULL,
-    failed_at        = NULL,
-    next_retry_after = NULL
-WHERE notification_template_id = $2::uuid
-  AND $3::uuid = ANY (UNNEST(targets))
-RETURNING id, notification_template_id, status, status_reason, created_by, input, attempt_count, created_at, updated_at, leased_until, next_retry_after, sent_at, failed_at, targets, dedupe_hash
-`
-
-type MarkNotificationMessagesInhibitedParams struct {
-	Reason                 sql.NullString `db:"reason" json:"reason"`
-	NotificationTemplateID uuid.UUID      `db:"notification_template_id" json:"notification_template_id"`
-	UserOrOrgID            uuid.UUID      `db:"user_or_org_id" json:"user_or_org_id"`
-}
-
-func (q *sqlQuerier) MarkNotificationMessagesInhibited(ctx context.Context, arg MarkNotificationMessagesInhibitedParams) (NotificationMessage, error) {
-	row := q.db.QueryRowContext(ctx, markNotificationMessagesInhibited, arg.Reason, arg.NotificationTemplateID, arg.UserOrOrgID)
-	var i NotificationMessage
-	err := row.Scan(
-		&i.ID,
-		&i.NotificationTemplateID,
-		&i.Status,
-		&i.StatusReason,
-		&i.CreatedBy,
-		&i.Input,
-		&i.AttemptCount,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.LeasedUntil,
-		&i.NextRetryAfter,
-		&i.SentAt,
-		&i.FailedAt,
-		pq.Array(&i.Targets),
-		&i.DedupeHash,
 	)
 	return i, err
 }

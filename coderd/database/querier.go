@@ -52,6 +52,9 @@ type sqlcQuerier interface {
 	// referenced by the latest build of a workspace.
 	ArchiveUnusedTemplateVersions(ctx context.Context, arg ArchiveUnusedTemplateVersionsParams) ([]uuid.UUID, error)
 	BatchUpdateWorkspaceLastUsedAt(ctx context.Context, arg BatchUpdateWorkspaceLastUsedAtParams) error
+	BulkMarkNotificationMessageFailed(ctx context.Context, arg BulkMarkNotificationMessageFailedParams) (int64, error)
+	BulkMarkNotificationMessagesInhibited(ctx context.Context, arg BulkMarkNotificationMessagesInhibitedParams) (int64, error)
+	BulkMarkNotificationMessagesSent(ctx context.Context, arg BulkMarkNotificationMessagesSentParams) (int64, error)
 	CleanTailnetCoordinators(ctx context.Context) error
 	CleanTailnetLostPeers(ctx context.Context) error
 	CleanTailnetTunnels(ctx context.Context) error
@@ -74,7 +77,7 @@ type sqlcQuerier interface {
 	DeleteOAuth2ProviderAppTokensByAppAndUserID(ctx context.Context, arg DeleteOAuth2ProviderAppTokensByAppAndUserIDParams) error
 	// Delete all notification messages which have not been updated for over a week.
 	// Delete all sent or inhibited messages which are over a day old.
-	DeleteOldNotificationMessages(ctx context.Context) error
+	DeleteOldNotificationMessages(ctx context.Context, maxAttemptCount int32) error
 	// Delete provisioner daemons that have been created at least a week ago
 	// and have not connected to coderd since a week.
 	// A provisioner daemon with "zeroed" last_seen_at column indicates possible
@@ -361,9 +364,6 @@ type sqlcQuerier interface {
 	InsertWorkspaceResource(ctx context.Context, arg InsertWorkspaceResourceParams) (WorkspaceResource, error)
 	InsertWorkspaceResourceMetadata(ctx context.Context, arg InsertWorkspaceResourceMetadataParams) ([]WorkspaceResourceMetadatum, error)
 	ListWorkspaceAgentPortShares(ctx context.Context, workspaceID uuid.UUID) ([]WorkspaceAgentPortShare, error)
-	MarkNotificationMessageFailed(ctx context.Context, arg MarkNotificationMessageFailedParams) (NotificationMessage, error)
-	MarkNotificationMessageSent(ctx context.Context, arg MarkNotificationMessageSentParams) (NotificationMessage, error)
-	MarkNotificationMessagesInhibited(ctx context.Context, arg MarkNotificationMessagesInhibitedParams) (NotificationMessage, error)
 	ReduceWorkspaceAgentShareLevelToAuthenticatedByTemplate(ctx context.Context, templateID uuid.UUID) error
 	RegisterWorkspaceProxy(ctx context.Context, arg RegisterWorkspaceProxyParams) (WorkspaceProxy, error)
 	RemoveUserFromAllGroups(ctx context.Context, userID uuid.UUID) error

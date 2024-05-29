@@ -137,6 +137,27 @@ func (m metricsStore) BatchUpdateWorkspaceLastUsedAt(ctx context.Context, arg da
 	return r0
 }
 
+func (m metricsStore) BulkMarkNotificationMessageFailed(ctx context.Context, arg database.BulkMarkNotificationMessageFailedParams) (int64, error) {
+	start := time.Now()
+	r0, r1 := m.s.BulkMarkNotificationMessageFailed(ctx, arg)
+	m.queryLatencies.WithLabelValues("BulkMarkNotificationMessageFailed").Observe(time.Since(start).Seconds())
+	return r0, r1
+}
+
+func (m metricsStore) BulkMarkNotificationMessagesInhibited(ctx context.Context, arg database.BulkMarkNotificationMessagesInhibitedParams) (int64, error) {
+	start := time.Now()
+	r0, r1 := m.s.BulkMarkNotificationMessagesInhibited(ctx, arg)
+	m.queryLatencies.WithLabelValues("BulkMarkNotificationMessagesInhibited").Observe(time.Since(start).Seconds())
+	return r0, r1
+}
+
+func (m metricsStore) BulkMarkNotificationMessagesSent(ctx context.Context, arg database.BulkMarkNotificationMessagesSentParams) (int64, error) {
+	start := time.Now()
+	r0, r1 := m.s.BulkMarkNotificationMessagesSent(ctx, arg)
+	m.queryLatencies.WithLabelValues("BulkMarkNotificationMessagesSent").Observe(time.Since(start).Seconds())
+	return r0, r1
+}
+
 func (m metricsStore) CleanTailnetCoordinators(ctx context.Context) error {
 	start := time.Now()
 	err := m.s.CleanTailnetCoordinators(ctx)
@@ -277,7 +298,7 @@ func (m metricsStore) DeleteOAuth2ProviderAppTokensByAppAndUserID(ctx context.Co
 	return r0
 }
 
-func (m metricsStore) DeleteOldNotificationMessages(ctx context.Context) error {
+func (m metricsStore) DeleteOldNotificationMessages(ctx context.Context, maxAttemptCount int32) error {
 	start := time.Now()
 	r0 := m.s.DeleteOldNotificationMessages(ctx)
 	m.queryLatencies.WithLabelValues("DeleteOldNotificationMessages").Observe(time.Since(start).Seconds())
@@ -1779,27 +1800,6 @@ func (m metricsStore) ListWorkspaceAgentPortShares(ctx context.Context, workspac
 	start := time.Now()
 	r0, r1 := m.s.ListWorkspaceAgentPortShares(ctx, workspaceID)
 	m.queryLatencies.WithLabelValues("ListWorkspaceAgentPortShares").Observe(time.Since(start).Seconds())
-	return r0, r1
-}
-
-func (m metricsStore) MarkNotificationMessageFailed(ctx context.Context, arg database.MarkNotificationMessageFailedParams) (database.NotificationMessage, error) {
-	start := time.Now()
-	r0, r1 := m.s.MarkNotificationMessageFailed(ctx, arg)
-	m.queryLatencies.WithLabelValues("MarkNotificationMessageFailed").Observe(time.Since(start).Seconds())
-	return r0, r1
-}
-
-func (m metricsStore) MarkNotificationMessageSent(ctx context.Context, arg database.MarkNotificationMessageSentParams) (database.NotificationMessage, error) {
-	start := time.Now()
-	r0, r1 := m.s.MarkNotificationMessageSent(ctx, arg)
-	m.queryLatencies.WithLabelValues("MarkNotificationMessageSent").Observe(time.Since(start).Seconds())
-	return r0, r1
-}
-
-func (m metricsStore) MarkNotificationMessagesInhibited(ctx context.Context, arg database.MarkNotificationMessagesInhibitedParams) (database.NotificationMessage, error) {
-	start := time.Now()
-	r0, r1 := m.s.MarkNotificationMessagesInhibited(ctx, arg)
-	m.queryLatencies.WithLabelValues("MarkNotificationMessagesInhibited").Observe(time.Since(start).Seconds())
 	return r0, r1
 }
 

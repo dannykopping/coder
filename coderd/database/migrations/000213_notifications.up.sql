@@ -32,7 +32,7 @@ CREATE TABLE notification_messages
     input                    jsonb,
     attempt_count            int,
     created_at               timestamp with time zone    NOT NULL,
-    updated_at               timestamp with time zone    NOT NULL,
+    updated_at               timestamp with time zone,
     leased_until             timestamp with time zone,
     next_retry_after         timestamp with time zone,
     sent_at                  timestamp with time zone,

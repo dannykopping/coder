@@ -1175,6 +1175,33 @@ func (q *FakeQuerier) BatchUpdateWorkspaceLastUsedAt(_ context.Context, arg data
 	return nil
 }
 
+func (q *FakeQuerier) BulkMarkNotificationMessageFailed(ctx context.Context, arg database.BulkMarkNotificationMessageFailedParams) (int64, error) {
+	err := validateDatabaseType(arg)
+	if err != nil {
+		return 0, err
+	}
+
+	panic("not implemented")
+}
+
+func (q *FakeQuerier) BulkMarkNotificationMessagesInhibited(ctx context.Context, arg database.BulkMarkNotificationMessagesInhibitedParams) (int64, error) {
+	err := validateDatabaseType(arg)
+	if err != nil {
+		return 0, err
+	}
+
+	panic("not implemented")
+}
+
+func (q *FakeQuerier) BulkMarkNotificationMessagesSent(ctx context.Context, arg database.BulkMarkNotificationMessagesSentParams) (int64, error) {
+	err := validateDatabaseType(arg)
+	if err != nil {
+		return 0, err
+	}
+
+	panic("not implemented")
+}
+
 func (*FakeQuerier) CleanTailnetCoordinators(_ context.Context) error {
 	return ErrUnimplemented
 }
@@ -1505,7 +1532,7 @@ func (q *FakeQuerier) DeleteOAuth2ProviderAppTokensByAppAndUserID(_ context.Cont
 	return nil
 }
 
-func (q *FakeQuerier) DeleteOldNotificationMessages(ctx context.Context) error {
+func (q *FakeQuerier) DeleteOldNotificationMessages(ctx context.Context, maxAttemptCount int32) error {
 	panic("not implemented")
 }
 
@@ -6982,33 +7009,6 @@ func (q *FakeQuerier) ListWorkspaceAgentPortShares(_ context.Context, workspaceI
 	}
 
 	return shares, nil
-}
-
-func (q *FakeQuerier) MarkNotificationMessageFailed(ctx context.Context, arg database.MarkNotificationMessageFailedParams) (database.NotificationMessage, error) {
-	err := validateDatabaseType(arg)
-	if err != nil {
-		return database.NotificationMessage{}, err
-	}
-
-	panic("not implemented")
-}
-
-func (q *FakeQuerier) MarkNotificationMessageSent(ctx context.Context, arg database.MarkNotificationMessageSentParams) (database.NotificationMessage, error) {
-	err := validateDatabaseType(arg)
-	if err != nil {
-		return database.NotificationMessage{}, err
-	}
-
-	panic("not implemented")
-}
-
-func (q *FakeQuerier) MarkNotificationMessagesInhibited(ctx context.Context, arg database.MarkNotificationMessagesInhibitedParams) (database.NotificationMessage, error) {
-	err := validateDatabaseType(arg)
-	if err != nil {
-		return database.NotificationMessage{}, err
-	}
-
-	panic("not implemented")
 }
 
 func (q *FakeQuerier) ReduceWorkspaceAgentShareLevelToAuthenticatedByTemplate(_ context.Context, templateID uuid.UUID) error {

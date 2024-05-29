@@ -55,6 +55,8 @@ WHERE id = (SELECT nm.id,
                         AND nm.leased_until < NOW()
                     )
                 )
+              -- exclude all messages which have exceeded the max attempts; these will be purged later
+              AND (nm.attempt_count < sqlc.arg('max_attempt_count')::int)
               -- if set, do not retry until we've exceeded the wait time
               AND (nm.next_retry_after IS NOT NULL AND nm.next_retry_after < NOW())
               -- only enqueue if user/org has not disabled this template
@@ -67,18 +69,23 @@ WHERE id = (SELECT nm.id,
             LIMIT sqlc.arg('count'))
 RETURNING *;
 
--- name: MarkNotificationMessageFailed :one
+-- name: BulkMarkNotificationMessageFailed :execrows
+WITH new_values AS (SELECT UNNEST(@ids::uuid[])               AS id,
+                           UNNEST(@failed_ats::timestamptz[]) AS failed_at,
+                           UNNEST(@statuses::text[])          AS status,
+                           UNNEST(@status_reasons::text[])    AS status_reason)
 UPDATE notification_messages
 SET updated_at       = NOW(),
     attempt_count    = attempt_count + 1,
-    status           = sqlc.arg('status'),
-    status_reason    = sqlc.narg('reason'),
-    failed_at        = sqlc.arg('failed_at')::time,
-    next_retry_after = sqlc.narg('next_retry_after')::time -- optional: retries may have been exceeded
-WHERE id = sqlc.arg('id')
-RETURNING *;
+    status           = subquery.status,
+    status_reason    = subquery.status_reason,
+    failed_at        = subquery.failed_at,
+    next_retry_after = NOW() + INTERVAL '10m' -- TODO: configurable? This will also be irrelevant for messages which have exceeded their attempts
+FROM (SELECT id, status, status_reason, failed_at
+      FROM new_values) AS subquery
+WHERE notification_messages.id = subquery.id;
 
--- name: MarkNotificationMessagesInhibited :one
+-- name: BulkMarkNotificationMessagesInhibited :execrows
 UPDATE notification_messages
 SET updated_at       = NOW(),
     status           = 'inhibited'::notification_message_status,
@@ -86,19 +93,20 @@ SET updated_at       = NOW(),
     sent_at          = NULL,
     failed_at        = NULL,
     next_retry_after = NULL
-WHERE notification_template_id = sqlc.arg('notification_template_id')::uuid
-  AND sqlc.arg('user_or_org_id')::uuid = ANY (UNNEST(targets))
-RETURNING *;
+WHERE notification_messages.id IN (UNNEST(@ids::uuid[]));
 
--- name: MarkNotificationMessageSent :one
+-- name: BulkMarkNotificationMessagesSent :execrows
+WITH new_values AS (SELECT UNNEST(@ids::uuid[])             AS id,
+                           UNNEST(@sent_ats::timestamptz[]) AS sent_at)
 UPDATE notification_messages
 SET updated_at       = NOW(),
     status           = 'sent'::notification_message_status,
-    sent_at          = sqlc.arg('sent_at')::time,
+    sent_at          = subquery.sent_at,
     leased_until     = NULL,
     next_retry_after = NULL
-WHERE id = sqlc.arg('id')
-RETURNING *;
+FROM (SELECT id, sent_at
+      FROM new_values) AS subquery
+WHERE notification_messages.id = subquery.id;
 
 -- Delete all notification messages which have not been updated for over a week.
 -- Delete all sent or inhibited messages which are over a day old.
@@ -108,12 +116,20 @@ FROM notification_messages
 WHERE id =
       (SELECT id
        FROM notification_messages AS nested
+       -- delete ALL week-old messages
        WHERE nested.updated_at < NOW() - INTERVAL '7 days'
           OR (
+           -- delete sent messages after 1 day
            nested.status = 'sent'::notification_message_status AND nested.sent_at < (NOW() - INTERVAL '1 days')
            )
           OR (
+           -- delete messages which have exceeded their attempt count after 1 day
+           nested.attempt_count >= sqlc.arg('max_attempt_count')::int AND nested.sent_at < (NOW() - INTERVAL '1 days')
+           )
+          OR (
+           -- delete inhibited messages after 1 day
            nested.status = 'inhibited'::notification_message_status AND
            nested.updated_at < (NOW() - INTERVAL '1 days')
            )
-           FOR UPDATE SKIP LOCKED); -- ensure we don't clash with the notifier
+          -- ensure we don't clash with the notifier
+           FOR UPDATE SKIP LOCKED);
